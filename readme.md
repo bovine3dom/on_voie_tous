@@ -21,3 +21,12 @@ Run with
 Build for distribution with
 
 `scripts/build.sh`
+
+Testing on android:
+
+1. plug in your phone
+2. `adb devices`
+3. allow usb debugging on phone
+4. `scripts/run_android.sh [device id]`
+5. make sure firefox settings -> usb debugging is enabled
+6. test
