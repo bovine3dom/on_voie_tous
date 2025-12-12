@@ -10,6 +10,12 @@
   "host_permissions": [
     "https://www.garesetconnexions.sncf/*"
   ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "on_voie_tous@bovine3dom",
+      "data_collection_permissions": {"required": ["none"]}
+    }
+  },
   "content_scripts": [
     {
       "matches": ["https://www.garesetconnexions.sncf/*"],
