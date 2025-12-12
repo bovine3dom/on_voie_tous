@@ -3,6 +3,10 @@
   "name": "On Voie Tous",
   "version": "0.1",
   "permissions": [],
+  "icons": {
+    "32": "logo_32.png",
+    "64": "logo_64.png"
+  },
   "host_permissions": [
     "https://www.garesetconnexions.sncf/*"
   ],
