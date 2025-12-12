@@ -10,3 +10,14 @@ SNCF Gares & Connexions doesn't show train platforms until very late, approx 20 
 ## Disclaimer
 
 Sometimes the platform might change. You will notice when this happens because the train will not arrive at your platform.
+
+
+## Development
+
+Run with
+
+`scripts/run.sh`
+
+Build for distribution with
+
+`scripts/build.sh`
