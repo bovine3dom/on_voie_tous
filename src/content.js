@@ -6,6 +6,9 @@
 // @author       bovine3dom
 // @match        https://www.garesetconnexions.sncf/*
 // @run-at       document-start
+// @updateURL    https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.js
+// @downloadURL  https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.js
+// @supportURL   https://github.com/bovine3dom/on_voie_tous/issues/
 // @grant        none
 // ==/UserScript==
 
