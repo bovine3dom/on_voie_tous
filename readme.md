@@ -7,6 +7,12 @@ SNCF Gares & Connexions doesn't show train platforms until very late, approx 20 
 ![Lyon Part Dieu departures with platforms exposed by On Voie Tous on the left and without on the right](promo.png)
 
 
+## Installation
+
+Add to Firefox on desktop or Android from the [Firefox Add-ons Store](https://addons.mozilla.org/en-US/firefox/addon/on-voie-tous/). Users have reported that it also works on the Orion browser for iPhone.
+
+For other browsers that support userscripts, if you have e.g. Tampermonkey installed, you can install the script directly by clicking this link: [content.user.js](https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js)
+
 ## Disclaimer
 
 Sometimes the platform might change. You will notice when this happens because the train will not arrive at your platform.
