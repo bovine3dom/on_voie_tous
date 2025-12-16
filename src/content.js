@@ -1,4 +1,17 @@
+// ==UserScript==
+// @name         On Voie Tous
+// @namespace    http://tampermonkey.net/
+// @version      0.1
+// @description  Exposes platform information on garesetconnexions.sncf
+// @author       bovine3dom
+// @match        https://www.garesetconnexions.sncf/*
+// @run-at       document-start
+// @grant        none
+// ==/UserScript==
+
 (function() {
+    'use strict';
+
     const originalFetch = window.fetch;
     function makeTracksActive(obj) {
         if (!obj) return;
@@ -22,7 +35,7 @@
             try {
                 const data = await clonedResponse.json();
                 makeTracksActive(data);
-                
+
                 return new Response(JSON.stringify(data), {
                     status: response.status,
                     statusText: response.statusText,
