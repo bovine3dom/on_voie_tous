@@ -19,7 +19,7 @@
   "content_scripts": [
     {
       "matches": ["https://www.garesetconnexions.sncf/*"],
-      "js": ["content.js"],
+      "js": ["content.user.js"],
       "run_at": "document_start",
       "world": "MAIN"
     }
