@@ -1,0 +1,5 @@
+data/
+*.arrow
+*.cbm
+catboost_info
+
