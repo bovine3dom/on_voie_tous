@@ -1,0 +1,4 @@
+[deps]
+Arrow = "69666777-d1a9-59fb-9406-91d4454c9d45"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+HivePartitioner = "e6759698-f989-46ce-a66a-5407f6e49a98"

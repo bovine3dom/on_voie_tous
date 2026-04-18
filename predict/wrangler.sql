@@ -21,9 +21,10 @@ into outfile 'sncf-big.arrow' truncate settings output_format_arrow_compression_
 select distinct on (station, predictedTime, scheduledTime, predictedPlatform, predictedDestination, predictedOrigin, scheduledDestination, scheduledOrigin, trainLine, trainMode, trainNumber, trainType, trainStatus) station, parseDateTimeBestEffort(ts) timestamp, parseDateTimeBestEffort(d.actualTime) predictedTime, parseDateTimeBestEffort(d.scheduledTime) scheduledTime,
 if(d.platform.track is not null, arrayStringConcat(arrayFilter(x->x!='', [ifNull(d.platform.trackGroupTitle, ''), ifNull(d.platform.trackGroupValue, ''), ifNull(d.platform.track,'')]), ' '), '') predictedPlatform
     , d.traffic.destination predictedDestination, d.traffic.origin predictedOrigin, d.traffic.oldDestination scheduledDestination, d.traffic.oldOrigin scheduledOrigin, d.trainLine trainLine, d.trainMode trainMode, d.trainNumber trainNumber, d.trainType trainType, d.informationStatus.trainStatus trainStatus from (
-    select station, ts, arrayJoin(data) d from 'data/2026-03-30T20:18:13Z.jsonl.zst'
-    where station = '0087756056'
+    select station, ts, arrayJoin(data) d from 'data/2026-04-18T*Z.jsonl.zst'
+    --where station = '0087756056'
 )
+-- : (in file/uri /home/olie/projects/on_voie_tous/predict/data/2026-04-18T04:51:13Z.jsonl.zst): While executing JSONEachRowRowInputFormat: While executing File. (CANNOT_READ_ARRAY_FROM_TEXT). -- cursed file. deleted for now
 
 -- if accuracy is still rubbish, consider dumping cancelled trains
 WITH base_data AS (
@@ -48,7 +49,7 @@ WITH base_data AS (
     FROM (
         SELECT station, ts, arrayJoin(data) d 
         FROM 'data/*.jsonl.zst'
-        WHERE station = '0087756056'
+--        WHERE station = '0087756056'
     )
 ),
 session_gaps AS (
@@ -103,4 +104,4 @@ FROM actual_platforms
 WHERE (trainStatus == 'SUPPRESSION_TOTALE' OR raw_actualPlatform != '')
 --ORDER BY trainNumber, station, timestamp -- breaks cv stratification
 ORDER BY timestamp
-into outfile 'sncf-tiny.arrow' truncate settings output_format_arrow_compression_method = 'none';
+into outfile 'sncf-big.arrow' truncate settings output_format_arrow_compression_method = 'none';
