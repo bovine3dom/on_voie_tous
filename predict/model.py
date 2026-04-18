@@ -41,9 +41,6 @@ def load_station_data(folder_path: str) -> pl.DataFrame:
 def train_station_model(station_id: str, df: pl.DataFrame) -> CatBoostClassifier | None:
     unique_platforms = df["actualPlatform"].unique()
     if len(unique_platforms) < 2:
-        print(
-            f"  Skipping {station_id}: only {len(unique_platforms)} unique platform(s)"
-        )
         return None
 
     cat_feature_names = [c for c in CAT_COLS if c in df.columns]
@@ -60,7 +57,7 @@ def train_station_model(station_id: str, df: pl.DataFrame) -> CatBoostClassifier
         "depth": 6,
         "loss_function": "MultiClass",
         "eval_metric": "Accuracy",
-        "verbose": True,
+        "verbose": False,
         "random_seed": 1337,
     }
     model = CatBoostClassifier(**params)
@@ -72,7 +69,7 @@ def save_model(model: CatBoostClassifier, station_id: str):
     os.makedirs(MODELS_DIR, exist_ok=True)
     model_path = os.path.join(MODELS_DIR, f"{station_id}.cbm")
     model.save_model(model_path, format="cbm")
-    print(f"Saved model to {model_path}")
+    print(f"saved model to {model_path}")
 
 
 def discover_stations():
@@ -84,57 +81,42 @@ def discover_stations():
         station_id = extract_station_id(folder)
         arrow_path = os.path.join(folder, "part0.arrow")
         stations.append({"station_id": station_id, "arrow_path": arrow_path})
-        print(f"  - {station_id}")
+        # print(f"  - {station_id}")
 
     return stations
 
 
 def train_all_models(max_to_train: int | None = None):
     stations = discover_stations()
-
-    to_train = stations[:max_to_train] if max_to_train else stations
     trained = 0
-    tried = 0
 
-    for station in stations:
+    for idx, station in enumerate(stations):
         if max_to_train and trained >= max_to_train:
             break
         station_id = station["station_id"]
         model_path = os.path.join(MODELS_DIR, f"{station_id}.cbm")
 
         if os.path.exists(model_path):
-            print(f"Skipping {station_id} (model already exists)")
             continue
 
-        print(f"\nTraining model for station {station_id}...")
+        print(
+            f"[{idx + 1}/{len(stations)}] Training {station_id}...", end=" ", flush=True
+        )
         df = load_station_data(os.path.dirname(station["arrow_path"]))
-        print(f"  Loaded {df.height} rows")
-        tried += 1
 
         model = train_station_model(station_id, df)
         if model is None:
+            print("skipped (fewer than 2 platforms)")
             continue
         save_model(model, station_id)
         trained += 1
 
-        if max_to_train and trained >= max_to_train:
-            print(f"\nReached max training limit ({max_to_train})")
-            break
-
-    print(f"\nTraining complete. Tried {tried} stations, trained {trained} models.")
-
-    print(f"\nTraining complete. Trained {trained} models.")
+    print(f"\nTraining complete: {trained} models for {len(stations)} stations.")
 
 
 if __name__ == "__main__":
     import argparse
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--max", type=int, default=None, help="Max models to train")
     args = parser.parse_args()
-
-    if TRAIN_MODELS:
-        train_all_models(max_to_train=args.max)
-    else:
-        discover_stations()
-        print("\nSet TRAIN_MODELS=true to actually train models.")
+    train_all_models(max_to_train=args.max)
