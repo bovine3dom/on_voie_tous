@@ -1,52 +1,140 @@
 # uv run python
+import os
+import glob
 import polars as pl
 import numpy as np
-from catboost import Pool, CatBoostClassifier, cv
+from catboost import Pool, CatBoostClassifier
 
-# 1. Load the data
-df = pl.read_ipc('sncf-tiny.arrow', memory_map=True) # ... memory mapping fails for some reason
-# df = pl.read_ipc('sncf-big.arrow', memory_map=True) # ... memory mapping fails for some reason
+SNCF_HIVE_DIR = "sncf-hive"
+MODELS_DIR = "models"
+TRAIN_MODELS = os.getenv("TRAIN_MODELS", "false").lower() == "true"
 
-cat_features = [0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+CAT_COLS = [
+    "predictedPlatform",
+    "predictedDestination",
+    "predictedOrigin",
+    "scheduledDestination",
+    "scheduledOrigin",
+    "trainLine",
+    "trainMode",
+    "trainNumber",
+    "trainType",
+    "trainStatus",
+]
 
-# exponential decay on age. bugger should have added this in CH too
-# max_ts = df["timestamp"].max()
-# half_life = 60 * 60 * 24 * 30 # monthly-ish (nb: presumably everything will break on timezone change)
-# decay = np.log(2) / half_life
-# df = df.with_columns(
-#     diff = (pl.col("timestamp").cast(pl.Float64) - float(max_ts))
-# )
-# 
-# df = df.with_columns(
-#     weight = (pl.col("diff") * decay).exp()
-# )
-# df = df.drop("diff")
 
-# full_pool = Pool(data=df.drop(["actualPlatform", "weight"]), label=df.select(["actualPlatform"]), cat_features=cat_features, weight=df["weight"])
-full_pool = Pool(data=df.drop(["actualPlatform"]), label=df.select(["actualPlatform"]), cat_features=cat_features)
-params = {
-    'iterations': 100,
-    'learning_rate': 0.1,
-    'depth': 6,
-    'loss_function': 'MultiClass',
-    'eval_metric': 'Accuracy',
-    'verbose': True,
-    'random_seed': 1337
-}
+def get_station_folders(base_dir: str) -> list[str]:
+    pattern = os.path.join(base_dir, "station=*")
+    folders = glob.glob(pattern)
+    return sorted(folders)
 
-cv_data = cv(
-    pool=full_pool,
-    params=params,
-    fold_count=5,
-    shuffle=False, # preserve time order. nb: make sure you don't sort by station(!)
-    stratified=False # ditto
-)
 
-pl.Config(tbl_rows=200)
-print(cv_data.tail())
+def extract_station_id(folder_path: str) -> str:
+    return os.path.basename(folder_path).replace("station=", "")
 
-# 90% that'll do
 
-model = CatBoostClassifier(iterations=70, learning_rate=0.1, random_seed=1337, verbose=True)
-model.fit(full_pool)
-model.save_model("sncf_model.cbm", format="cbm")
+def load_station_data(folder_path: str) -> pl.DataFrame:
+    arrow_file = os.path.join(folder_path, "part0.arrow")
+    return pl.read_ipc(arrow_file, memory_map=True)
+
+
+def train_station_model(station_id: str, df: pl.DataFrame) -> CatBoostClassifier | None:
+    unique_platforms = df["actualPlatform"].unique()
+    if len(unique_platforms) < 2:
+        print(
+            f"  Skipping {station_id}: only {len(unique_platforms)} unique platform(s)"
+        )
+        return None
+
+    cat_feature_names = [c for c in CAT_COLS if c in df.columns]
+    cat_feature_indices = [df.columns.index(c) for c in cat_feature_names]
+
+    full_pool = Pool(
+        data=df.drop(["actualPlatform"]),
+        label=df.select(["actualPlatform"]),
+        cat_features=cat_feature_indices,
+    )
+    params = {
+        "iterations": 100,
+        "learning_rate": 0.1,
+        "depth": 6,
+        "loss_function": "MultiClass",
+        "eval_metric": "Accuracy",
+        "verbose": True,
+        "random_seed": 1337,
+    }
+    model = CatBoostClassifier(**params)
+    model.fit(full_pool)
+    return model
+
+
+def save_model(model: CatBoostClassifier, station_id: str):
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    model_path = os.path.join(MODELS_DIR, f"{station_id}.cbm")
+    model.save_model(model_path, format="cbm")
+    print(f"Saved model to {model_path}")
+
+
+def discover_stations():
+    folders = get_station_folders(SNCF_HIVE_DIR)
+    print(f"Found {len(folders)} station folders in {SNCF_HIVE_DIR}")
+
+    stations = []
+    for folder in folders:
+        station_id = extract_station_id(folder)
+        arrow_path = os.path.join(folder, "part0.arrow")
+        stations.append({"station_id": station_id, "arrow_path": arrow_path})
+        print(f"  - {station_id}")
+
+    return stations
+
+
+def train_all_models(max_to_train: int | None = None):
+    stations = discover_stations()
+
+    to_train = stations[:max_to_train] if max_to_train else stations
+    trained = 0
+    tried = 0
+
+    for station in stations:
+        if max_to_train and trained >= max_to_train:
+            break
+        station_id = station["station_id"]
+        model_path = os.path.join(MODELS_DIR, f"{station_id}.cbm")
+
+        if os.path.exists(model_path):
+            print(f"Skipping {station_id} (model already exists)")
+            continue
+
+        print(f"\nTraining model for station {station_id}...")
+        df = load_station_data(os.path.dirname(station["arrow_path"]))
+        print(f"  Loaded {df.height} rows")
+        tried += 1
+
+        model = train_station_model(station_id, df)
+        if model is None:
+            continue
+        save_model(model, station_id)
+        trained += 1
+
+        if max_to_train and trained >= max_to_train:
+            print(f"\nReached max training limit ({max_to_train})")
+            break
+
+    print(f"\nTraining complete. Tried {tried} stations, trained {trained} models.")
+
+    print(f"\nTraining complete. Trained {trained} models.")
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--max", type=int, default=None, help="Max models to train")
+    args = parser.parse_args()
+
+    if TRAIN_MODELS:
+        train_all_models(max_to_train=args.max)
+    else:
+        discover_stations()
+        print("\nSet TRAIN_MODELS=true to actually train models.")

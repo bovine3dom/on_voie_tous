@@ -1,7 +1,7 @@
 import os
 import polars as pl
 from pydantic import BaseModel
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from catboost import CatBoostClassifier
 from datetime import datetime
@@ -17,17 +17,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-model = CatBoostClassifier()
-model.load_model("sncf_model.cbm")
-feature_names = model.feature_names_
+MODELS_DIR = "models"
+_model_cache: dict[str, CatBoostClassifier] = {}
+
+CATEGORICAL_COLS = [
+    "station",
+    "predictedPlatform",
+    "predictedDestination",
+    "predictedOrigin",
+    "scheduledDestination",
+    "scheduledOrigin",
+    "trainLine",
+    "trainMode",
+    "trainNumber",
+    "trainType",
+    "trainStatus",
+]
+
+
+def get_model(station_id: str) -> CatBoostClassifier:
+    if station_id in _model_cache:
+        return _model_cache[station_id]
+
+    model_path = os.path.join(MODELS_DIR, f"{station_id}.cbm")
+    if not os.path.exists(model_path):
+        raise HTTPException(
+            status_code=404, detail=f"No model found for station {station_id}"
+        )
+
+    model = CatBoostClassifier()
+    model.load_model(model_path)
+    _model_cache[station_id] = model
+    return model
+
 
 HOST = os.getenv("PREDICT_HOST", "0.0.0.0")
 PORT = int(os.getenv("PREDICT_PORT", "8000"))
 
 
-def normalise_sncf_data(raw_payload: dict) -> pl.DataFrame:
+def normalise_sncf_data(raw_payload: dict, feature_names: list[str]) -> pl.DataFrame:
     df = pl.DataFrame(raw_payload["data"])
-    df = df.with_columns(pl.lit(raw_payload["station"]).alias("station"))
+    if "station" in feature_names:
+        df = df.with_columns(pl.lit(raw_payload["station"]).alias("station"))
     root_ts = int(datetime.fromisoformat(raw_payload["ts"]).timestamp())
     df = df.with_columns(pl.lit(root_ts).alias("timestamp"))
     df = df.unnest("platform", "traffic").drop("eventLevel").unnest("informationStatus")
@@ -48,20 +79,7 @@ def normalise_sncf_data(raw_payload: dict) -> pl.DataFrame:
     df = df.with_columns(
         pl.lit("MISSING").alias(c) for c in feature_names if c not in df.columns
     )
-    categorical_cols = [
-        "station",
-        "predictedPlatform",
-        "predictedDestination",
-        "predictedOrigin",
-        "scheduledDestination",
-        "scheduledOrigin",
-        "trainLine",
-        "trainMode",
-        "trainNumber",
-        "trainType",
-        "trainStatus",
-    ]
-    for col in categorical_cols:
+    for col in CATEGORICAL_COLS:
         if col in df.columns:
             df = df.with_columns(pl.col(col).cast(pl.String))
     return df.select(feature_names)
@@ -96,7 +114,12 @@ def health():
 @app.post("/predict", response_model=PredictionOutput)
 def predict(payload: PredictionInput):
     payload_dict = payload.model_dump()
-    df = normalise_sncf_data(payload_dict).fill_null("MISSING")
+    station_id = payload_dict["station"]
+
+    model = get_model(station_id)
+    feature_names = list(model.feature_names_)
+
+    df = normalise_sncf_data(payload_dict, feature_names).fill_null("MISSING")
     df = df[feature_names]
 
     num_trains = df.height
@@ -130,7 +153,10 @@ if __name__ == "__main__":
 {"ts":"2026-04-17T12:51:57.985068453+00:00","station":"0087756056","data":[{"TrafficDetailsUrl":"https://www.sncf-voyageurs.com/fr/voyagez-avec-nous/horaires-et-itineraires/recherche-de-train/detail-train/?numeroCirculation=881227&dateCirculation=2026-04-17&destinationCode=87756056","actualTime":"2026-04-17T13:33:00+00:00","alternativeMeans":null,"direction":"Departure","informationStatus":{"delay":null,"eventLevel":"Warning","trainStatus":"SUPPRESSION_TOTALE"},"isGL":false,"missionCode":null,"platform":{"backgroundColor":null,"isTrackactive":false,"track":"","trackGroupTitle":null,"trackGroupValue":null,"trackPosition":null},"presentation":{"colorCode":"#0749ff","textColorCode":"#FFFFFF"},"scheduledTime":"2026-04-17T12:03:00+00:00","shortTermInformations":[],"stationName":"Nice","statusModification":null,"stops":[],"traffic":{"destination":"Menton","eventLevel":"Warning","eventStatus":"SUPPRESSION","oldDestination":"","oldOrigin":"","origin":"Les Arcs - Draguignan"},"trainLine":null,"trainMode":"TRAIN","trainNumber":"881227","trainType":"ZOU !","uic":"0087756056"},{"TrafficDetailsUrl":"https://www.sncf-voyageurs.com/fr/voyagez-avec-nous/horaires-et-itineraires/recherche-de-train/detail-train/?numeroCirculation=86045&dateCirculation=2026-04-17&destinationCode=87756056","actualTime":"2026-04-17T12:54:00+00:00","alternativeMeans":null,"direction":"Departure","informationStatus":{"delay":null,"eventLevel":"Normal","trainStatus":"Ontime"},"isGL":false,"missionCode":null,"platform":{"backgroundColor":null,"isTrackactive":true,"track":"D","trackGroupTitle":null,"trackGroupValue":null,"trackPosition":null},"presentation":{"colorCode":"#0749ff","textColorCode":"#FFFFFF"},"scheduledTime":"2026-04-17T12:54:00+00:00","shortTermInformations":[],"stationName":"Nice","statusModification":null,"stops":[],"traffic":{"destination":"Ventimiglia","eventLevel":"Normal","eventStatus":"Ontime","oldDestination":"","oldOrigin":"","origin":"Grasse"},"trainLine":null,"trainMode":"TRAIN","trainNumber":"86045","trainType":"ZOU !","uic":"0087756056"}]}
 """
     payload = json.loads(raw_payload)
-    df2 = normalise_sncf_data(payload).fill_null("MISSING")
+    station_id = payload["station"]
+    model = get_model(station_id)
+    feature_names = list(model.feature_names_)
+    df2 = normalise_sncf_data(payload, feature_names).fill_null("MISSING")
     df2 = df2[feature_names]
     prediction = model.predict(df2)
     probability = model.predict_proba(df2)
