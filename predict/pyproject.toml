@@ -12,4 +12,8 @@ dependencies = [
     "polars>=1.39.3",
     "pyarrow>=23.0.1",
     "pydantic>=2.13.1",
+    "uvicorn>=0.40.0",
+    "httpx>=0.28.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
 ]

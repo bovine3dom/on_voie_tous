@@ -2,4 +2,4 @@ data/
 *.arrow
 *.cbm
 catboost_info
-
+__pycache__/
