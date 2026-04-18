@@ -73,9 +73,48 @@
         }
     }
 
+    function isContiguous(a, b) {
+        const numA = parseInt(a);
+        const numB = parseInt(b);
+        if (!isNaN(numA) && !isNaN(numB)) {
+            return numA + 1 === numB;
+        }
+        return a.charCodeAt(0) + 1 === b.charCodeAt(0);
+    }
+
     function formatPlatforms(probabilities) {
         const filtered = probabilities.filter(p => p.prob >= MIN_PROBABILITY);
-        const sorted = filtered.sort((a, b) => b.prob - a.prob);
+
+        const highProb = filtered.filter(p => p.prob >= 0.30);
+        const lowProb = filtered.filter(p => p.prob < 0.30);
+
+        lowProb.sort((a, b) => a.platform.localeCompare(b.platform, undefined, { numeric: true }));
+
+        const grouped = [];
+        let i = 0;
+        while (i < lowProb.length) {
+            const current = lowProb[i];
+            let j = i + 1;
+            while (j < lowProb.length && isContiguous(lowProb[j-1].platform, lowProb[j].platform)) {
+                j++;
+            }
+
+            if (j > i + 1) {
+                const group = lowProb.slice(i, j);
+                const totalProb = group.reduce((sum, p) => sum + p.prob, 0);
+                grouped.push({
+                    platform: group[0].platform + '-' + group[group.length - 1].platform,
+                    prob: totalProb
+                });
+            } else {
+                grouped.push(current);
+            }
+            i = j;
+        }
+
+        const all = [...highProb, ...grouped];
+        const sorted = all.sort((a, b) => b.prob - a.prob);
+
         return sorted.map(p => `${p.platform} (${Math.round(p.prob * 100)}%)`).join(', ');
     }
 
