@@ -172,4 +172,4 @@ if __name__ == "__main__":
     dfpls = df_with_probs.with_columns(rankings=ranked_probs)
     print(dfpls[["predictedDestination", "predictedPlatform", "rankings"]])
 
-    uvicorn.run(app, host=HOST, port=PORT)
+    uvicorn.run(app, host=HOST, port=PORT, access_log=False)
