@@ -52,6 +52,25 @@
             .informationLine .wrapperLocation .contentLocation {
                 padding: 1em !important;
             }
+            @media screen and (min-width: 768px) {
+                .informationLine .wrapperLocation .bothContentLocation {
+                    display: flex !important;
+                    flex-wrap: nowrap !important;
+                    gap: 0.5em !important;
+                    max-width: 100% !important;
+                }
+                .informationLine .wrapperLocation .contentLocation {
+                    max-width: 50% !important;
+                    overflow: hidden !important;
+                    text-overflow: ellipsis !important;
+                    white-space: nowrap !important;
+                }
+                .informationLine .wrapperLocation .contentLocation p {
+                    overflow: hidden !important;
+                    text-overflow: ellipsis !important;
+                    white-space: nowrap !important;
+                }
+            }
         `;
 
         document.head.appendChild(style);
