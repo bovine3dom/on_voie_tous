@@ -6,7 +6,7 @@ SNCF Gares & Connexions doesn't show train platforms until very late, approx 20 
 
 However, SNCF Gares & Connexions got wind of this and stopped transmitting the platform numbers ahead of time. That's ok, c'est de bonne guerre. I am petty and stubborn enough to replace it with my own gradient-boosted tree model which you can find in predict/.
 
-![An outdated screenshot of Lyon Part Dieu departures with platforms exposed by On Voie Tous on the left and without on the right](promo.png)
+![Nice Ville departures with platform predictions provided by On Voie Tous on the left and without on the right](promo.png)
 
 
 ## Installation
