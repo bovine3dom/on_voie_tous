@@ -15,7 +15,7 @@
 (function() {
     'use strict';
 
-    const PREDICT_SERVER_URL = window.PREDICT_SERVER_URL || 'http://localhost:8000';
+    const PREDICT_SERVER_URL = 'https://compute.olie.science/on_voie_tous';
     const PREDICT_TIMEOUT_MS = 2000;
     const MIN_PROBABILITY = 0.1;
     const MAX_PLATFORMS = 2;
