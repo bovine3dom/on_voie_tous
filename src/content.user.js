@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         On Voie Tous
 // @namespace    http://tampermonkey.net/
-// @version      0.2
+// @version      0.3
 // @description  Predicts platforms on garesetconnexions.sncf
 // @author       bovine3dom
 // @match        https://www.garesetconnexions.sncf/*
@@ -163,28 +163,6 @@
         }
     }
 
-    function getMostCommonUic(trains) {
-        if (!trains || !Array.isArray(trains)) {
-            return null;
-        }
-        const uicCounts = {};
-        for (const train of trains) {
-            const uic = train.uic;
-            if (uic) {
-                uicCounts[uic] = (uicCounts[uic] || 0) + 1;
-            }
-        }
-        let mostCommon = null;
-        let maxCount = 0;
-        for (const uic in uicCounts) {
-            if (uicCounts[uic] > maxCount) {
-                maxCount = uicCounts[uic];
-                mostCommon = uic;
-            }
-        }
-        return mostCommon;
-    }
-
     async function addPredictions(response) {
         let trains;
         if (Array.isArray(response)) {
@@ -204,22 +182,39 @@
             return;
         }
 
-        const station = getMostCommonUic(departureTrains);
-        if (!station) {
-            return;
+        const uicGroups = {};
+        for (const train of departureTrains) {
+            const uic = train.uic;
+            if (!uic) continue;
+            if (!uicGroups[uic]) {
+                uicGroups[uic] = [];
+            }
+            uicGroups[uic].push(train);
         }
 
         const ts = new Date().toISOString();
+        const predictionsByUic = {};
 
-        const payload = {
-            ts: ts,
-            station: station,
-            data: departureTrains,
-        };
+        const results = [];
+        for (const uic in uicGroups) {
+            const group = uicGroups[uic];
+            const payload = {
+                ts: ts,
+                station: uic,
+                data: group,
+            };
 
-        const result = await callPredictServer(payload);
+            results.push({uic, promise: callPredictServer(payload)});
+        }
+        await Promise.all(results.map(r => r.promise));
+        for (const {uic, promise} of results) {
+            const result = await promise;
+            if (!result || !result.predictions) continue;
+            predictionsByUic[uic] = result.predictions;
+        }
 
-        if (!result || !result.predictions) {
+        const hasPredictions = Object.keys(predictionsByUic).length > 0;
+        if (!hasPredictions) {
             console.warn('[On Voie Tous] No predictions in response');
             return;
         }
@@ -227,13 +222,16 @@
         showBanner();
         injectStyles();
 
-        let predIndex = 0;
         for (const train of trains) {
             if (train.direction !== 'Departure') continue;
             if (!train.platform) continue;
 
-            const prediction = result.predictions[predIndex];
-            predIndex++;
+            const uic = train.uic;
+            if (!uic || !predictionsByUic[uic]) continue;
+
+            const group = uicGroups[uic];
+            const predIndex = group.indexOf(train);
+            const prediction = predictionsByUic[uic][predIndex];
             if (!prediction) continue;
 
             const originalTrack = train.platform.track;
