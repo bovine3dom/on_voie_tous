@@ -27,30 +27,64 @@ if(d.platform.track is not null, arrayStringConcat(arrayFilter(x->x!='', [ifNull
 -- : (in file/uri /home/olie/projects/on_voie_tous/predict/data/2026-04-18T04:51:13Z.jsonl.zst): While executing JSONEachRowRowInputFormat: While executing File. (CANNOT_READ_ARRAY_FROM_TEXT). -- cursed file. deleted for now
 
 -- if accuracy is still rubbish, consider dumping cancelled trains
-WITH base_data AS (
-    SELECT DISTINCT ON (station, predictedTime, scheduledTime, predictedPlatform, predictedDestination, predictedOrigin, scheduledDestination, scheduledOrigin, trainLine, trainMode, trainNumber, trainType, trainStatus) 
-        station, 
-        parseDateTimeBestEffort(ts) timestamp, 
-        parseDateTimeBestEffort(d.actualTime) predictedTime, 
-        parseDateTimeBestEffort(d.scheduledTime) scheduledTime, 
-        --if(d.platform.track is not null, arrayStringConcat(arrayFilter(x->x!='', [ifNull(d.platform.trackGroupTitle, ''), ifNull(d.platform.trackGroupValue, ''), ifNull(d.platform.track,'')]), ' '), '') predictedPlatform,
-        ifNull(d.platform.track, '') predictedPlatform,
---        ifNull(d.platform.trackGroupTitle, 'None') predictedTrackGroupTitle, -- can we just ignore these for now? is that a bad idea?
---        ifNull(d.platform.trackGroupValue, 'None') predictedTrackGroupValue,
-        d.traffic.destination predictedDestination, 
-        d.traffic.origin predictedOrigin, 
-        d.traffic.oldDestination scheduledDestination, 
-        d.traffic.oldOrigin scheduledOrigin, 
-        d.trainLine trainLine, 
-        d.trainMode trainMode, 
-        d.trainNumber trainNumber, 
-        d.trainType trainType, 
-        d.informationStatus.trainStatus trainStatus 
+WITH parsed_data AS (
+    SELECT 
+        toLowCardinality(d.uic) AS station, -- don't trust our station, uic is what is used on frontend
+        parseDateTimeBestEffort(ts) AS timestamp_raw, 
+        parseDateTimeBestEffort(d.actualTime) AS predictedTime, 
+        parseDateTimeBestEffort(d.scheduledTime) AS scheduledTime, 
+        toLowCardinality(ifNull(d.platform.track, '')) AS predictedPlatform,
+        toLowCardinality(ifNull(d.platform.trackGroupValue, '')) AS predictedTrackGroupValue,
+        toLowCardinality(ifNull(d.platform.trackGroupTitle, '')) AS predictedTrackGroupTitle,
+        toLowCardinality(ifNull(d.traffic.destination, '')) AS predictedDestination, 
+        toLowCardinality(ifNull(d.traffic.origin, '')) AS predictedOrigin, 
+        toLowCardinality(ifNull(d.traffic.oldDestination, '')) AS scheduledDestination, 
+        toLowCardinality(ifNull(d.traffic.oldOrigin, '')) AS scheduledOrigin, 
+        toLowCardinality(ifNull(d.trainLine, '')) AS trainLine, 
+        toLowCardinality(ifNull(d.trainMode, '')) AS trainMode, 
+        toLowCardinality(ifNull(d.trainNumber, '')) AS trainNumber, 
+        toLowCardinality(ifNull(d.trainType, '')) AS trainType, 
+        toLowCardinality(ifNull(d.informationStatus.trainStatus, '')) AS trainStatus 
     FROM (
-        SELECT station, ts, arrayJoin(data) d 
+        SELECT ts, arrayJoin(data) d 
         FROM 'data/*.jsonl.zst'
---        WHERE station = '0087756056'
     )
+),
+base_data AS (
+    SELECT 
+        station, 
+        arrayJoin(arrayDistinct([min(timestamp_raw), max(timestamp_raw)])) AS timestamp, 
+        predictedTime, 
+        scheduledTime, 
+        predictedPlatform, 
+        predictedTrackGroupValue, 
+        predictedTrackGroupTitle,
+        predictedDestination, 
+        predictedOrigin, 
+        scheduledDestination, 
+        scheduledOrigin, 
+        trainLine, 
+        trainMode, 
+        trainNumber, 
+        trainType, 
+        trainStatus 
+    FROM parsed_data
+    GROUP BY 
+        station, 
+        predictedTime, 
+        scheduledTime, 
+        predictedPlatform, 
+        predictedTrackGroupValue, 
+        predictedTrackGroupTitle,
+        predictedDestination, 
+        predictedOrigin, 
+        scheduledDestination, 
+        scheduledOrigin, 
+        trainLine, 
+        trainMode, 
+        trainNumber, 
+        trainType, 
+        trainStatus
 ),
 session_gaps AS (
     SELECT *,
@@ -85,23 +119,24 @@ actual_platforms AS (
     FROM session_ids
 )
 SELECT 
-    station,
+    CAST(station AS String) AS station,
     timestamp,
     predictedTime,
     scheduledTime,
-    ifNull(predictedPlatform, '') AS predictedPlatform,
-    ifNull(predictedDestination, '') AS predictedDestination,
-    ifNull(predictedOrigin, '') AS predictedOrigin,
-    ifNull(scheduledDestination, '') AS scheduledDestination,
-    ifNull(scheduledOrigin, '') AS scheduledOrigin,
-    ifNull(trainLine, '') AS trainLine,
-    ifNull(trainMode, '') AS trainMode,
-    ifNull(trainNumber, '') AS trainNumber,
-    ifNull(trainType, '') AS trainType,
-    ifNull(trainStatus, '') AS trainStatus,
-    if(raw_actualPlatform = '', '!', raw_actualPlatform) AS actualPlatform
+    CAST(predictedPlatform AS String) AS predictedPlatform,
+    CAST(predictedTrackGroupValue AS String) AS predictedTrackGroupValue,
+    CAST(predictedTrackGroupTitle AS String) AS predictedTrackGroupTitle,
+    CAST(predictedDestination AS String) AS predictedDestination,
+    CAST(predictedOrigin AS String) AS predictedOrigin,
+    CAST(scheduledDestination AS String) AS scheduledDestination,
+    CAST(scheduledOrigin AS String) AS scheduledOrigin,
+    CAST(trainLine AS String) AS trainLine,
+    CAST(trainMode AS String) AS trainMode,
+    CAST(trainNumber AS String) AS trainNumber,
+    CAST(trainType AS String) AS trainType,
+    CAST(trainStatus AS String) AS trainStatus,
+    if(raw_actualPlatform = '', '!!!', CAST(raw_actualPlatform AS String)) AS actualPlatform
 FROM actual_platforms
 WHERE (trainStatus == 'SUPPRESSION_TOTALE' OR raw_actualPlatform != '')
---ORDER BY trainNumber, station, timestamp -- breaks cv stratification
 ORDER BY timestamp
-into outfile 'sncf-big.arrow' truncate settings output_format_arrow_compression_method = 'none';
+INTO OUTFILE 'sncf-big.arrow' TRUNCATE SETTINGS output_format_arrow_compression_method = 'none';

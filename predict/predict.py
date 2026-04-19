@@ -23,6 +23,8 @@ _model_cache: dict[str, CatBoostClassifier] = {}
 CATEGORICAL_COLS = [
     "station",
     "predictedPlatform",
+    "predictedTrackGroupValue",
+    "predictedTrackGroupTitle",
     "predictedDestination",
     "predictedOrigin",
     "scheduledDestination",
@@ -65,6 +67,8 @@ def normalise_sncf_data(raw_payload: dict, feature_names: list[str]) -> pl.DataF
     df = df.rename(
         {
             "track": "predictedPlatform",
+            "trackGroupValue": "predictedTrackGroupValue",
+            "trackGroupTitle": "predictedTrackGroupTitle",
             "destination": "predictedDestination",
             "origin": "predictedOrigin",
             "actualTime": "predictedTime",

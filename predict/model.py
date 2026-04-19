@@ -11,6 +11,8 @@ TRAIN_MODELS = os.getenv("TRAIN_MODELS", "false").lower() == "true"
 
 CAT_COLS = [
     "predictedPlatform",
+    "predictedTrackGroupValue",
+    "predictedTrackGroupTitle",
     "predictedDestination",
     "predictedOrigin",
     "scheduledDestination",
