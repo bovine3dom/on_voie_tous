@@ -17,7 +17,8 @@
 
     const PREDICT_SERVER_URL = window.PREDICT_SERVER_URL || 'http://localhost:8000';
     const PREDICT_TIMEOUT_MS = 2000;
-    const MIN_PROBABILITY = 0.10;
+    const MIN_PROBABILITY = 0.1;
+    const MAX_PLATFORMS = 2;
 
     function showBanner() {
         if (document.getElementById('on-voie-tous-banner')) return;
@@ -96,13 +97,13 @@
         const numA = parseInt(a);
         const numB = parseInt(b);
         if (!isNaN(numA) && !isNaN(numB)) {
-            return numA + 1 === numB;
+            return numA + 1 === numB;// || numA + 2 === numB; // some stations only have odd platforms. but it ruins other stations...
         }
-        return a.charCodeAt(0) + 1 === b.charCodeAt(0);
+        return a.charCodeAt(0) + 1 === b.charCodeAt(0);// || a.charCodeAt(0) + 2 === b.charCodeAt(0);
     }
 
     function formatPlatforms(probabilities) {
-        const filtered = probabilities.filter(p => p.prob >= MIN_PROBABILITY);
+        const filtered = probabilities;
 
         const highProb = filtered.filter(p => p.prob >= 0.30);
         const lowProb = filtered.filter(p => p.prob < 0.30);
@@ -131,10 +132,9 @@
             i = j;
         }
 
-        const all = [...highProb, ...grouped];
-        const sorted = all.sort((a, b) => b.prob - a.prob);
+        const sorted = [...(highProb).sort((a, b) => b.prob - a.prob), ...(grouped).sort((a, b) => b.prob - a.prob)].filter(p => p.prob >= MIN_PROBABILITY);
 
-        return sorted.map(p => `${p.platform} (${Math.round(p.prob * 100)}%)`).join(', ');
+        return sorted.map(p => `${p.platform} (${Math.round(p.prob * 100)}%)`).slice(0, MAX_PLATFORMS).join(', ');
     }
 
     async function callPredictServer(payload) {
