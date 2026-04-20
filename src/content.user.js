@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         On Voie Tous
 // @namespace    http://tampermonkey.net/
-// @version      0.3
+// @version      0.4
 // @description  Predicts platforms on garesetconnexions.sncf
 // @author       bovine3dom
 // @match        https://www.garesetconnexions.sncf/*
@@ -103,7 +103,7 @@
     }
 
     function formatPlatforms(probabilities) {
-        const filtered = probabilities;
+        const filtered = probabilities.filter(p => p.prob > 0.05);
 
         const highProb = filtered.filter(p => p.prob >= 0.30);
         const lowProb = filtered.filter(p => p.prob < 0.30);
