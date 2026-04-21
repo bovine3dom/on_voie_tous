@@ -115,7 +115,10 @@ actual_platforms AS (
             if(predictedPlatform != '', toUnixTimestamp(timestamp), -1)
         ) OVER (
             PARTITION BY trainNumber, station, session_id
-        ) AS raw_actualPlatform
+        ) AS raw_actualPlatform,
+        max(timestamp) OVER (
+            PARTITION BY trainNumber, station, session_id
+        ) AS session_max_timestamp
     FROM session_ids
 )
 SELECT 
@@ -135,8 +138,16 @@ SELECT
     CAST(trainNumber AS String) AS trainNumber,
     CAST(trainType AS String) AS trainType,
     CAST(trainStatus AS String) AS trainStatus,
-    if(raw_actualPlatform = '', '!!!', CAST(raw_actualPlatform AS String)) AS actualPlatform
+    multiIf(
+        raw_actualPlatform != '', CAST(raw_actualPlatform AS String),
+        trainStatus == 'SUPPRESSION_TOTALE', '!!!',
+        '???'
+    ) AS actualPlatform
 FROM actual_platforms
-WHERE (trainStatus == 'SUPPRESSION_TOTALE' OR raw_actualPlatform != '')
+WHERE (
+    trainStatus == 'SUPPRESSION_TOTALE' 
+    OR raw_actualPlatform != ''
+    OR session_max_timestamp >= scheduledTime - INTERVAL 20 MINUTE
+)
 ORDER BY timestamp
 INTO OUTFILE 'sncf-big.arrow' TRUNCATE SETTINGS output_format_arrow_compression_method = 'none';
