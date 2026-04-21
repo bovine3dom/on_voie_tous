@@ -26,7 +26,7 @@ if(d.platform.track is not null, arrayStringConcat(arrayFilter(x->x!='', [ifNull
 )
 -- : (in file/uri /home/olie/projects/on_voie_tous/predict/data/2026-04-18T04:51:13Z.jsonl.zst): While executing JSONEachRowRowInputFormat: While executing File. (CANNOT_READ_ARRAY_FROM_TEXT). -- cursed file. deleted for now
 
--- if accuracy is still rubbish, consider dumping cancelled trains
+-- groupby version needs 10GB RAM vs 2GB before
 WITH parsed_data AS (
     SELECT 
         toLowCardinality(d.uic) AS station, -- don't trust our station, uic is what is used on frontend
