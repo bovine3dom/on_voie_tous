@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "On Voie Tous",
-  "version": "0.1",
+  "version": "0.4",
   "permissions": [],
   "icons": {
     "32": "logo_32.png",
