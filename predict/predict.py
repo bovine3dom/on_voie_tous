@@ -36,6 +36,8 @@ CATEGORICAL_COLS = [
     "trainStatus",
 ]
 
+UNKNOWN_PLATFORM = "???"
+
 
 def get_model(station_id: str) -> CatBoostClassifier:
     if station_id in _model_cache:
@@ -138,6 +140,7 @@ def predict(payload: PredictionInput):
             probs.append({"platform": str(cls), "prob": float(batch_probability[i][j])})
 
         probs.sort(key=lambda x: x["prob"], reverse=True)
+        probs = [p for p in probs if p["platform"] != UNKNOWN_PLATFORM]
 
         predictions.append(
             TrainPrediction(
