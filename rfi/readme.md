@@ -86,6 +86,32 @@ Saved models use only the training period by default.
 Use `--refit` to train the deployed model on all data after evaluation.
 The report keeps the earlier backtest measurements separate from the deployed model's date and classes.
 
+## MVP evaluation snapshot
+
+The full run used 751 archives and the 219 selected stations.
+Julia produced 310,302 examples from 101,823 labelled departures, in about 60 MiB of Arrow files.
+Of the selected stations, 127 had usable examples and 85 produced models.
+The other stations lacked stable targets, enough training data, or multiple training platforms.
+
+`rfi/evaluation.csv` records the per-station backtest results.
+The test period contained 11,298 eligible 30-minute cases across the trained models.
+At the raw-score cutoff of 0.8, coverage was 46.7% and agreement with later reports was 97.8%.
+Without abstention, agreement was 70.5%, compared with 71.1% for the historical-frequency baseline.
+CatBoost did not improve the overall top-choice accuracy over that baseline.
+
+| Station | Coverage at 0.8 | Agreement for accepted estimates |
+| --- | ---: | ---: |
+| Milano Centrale | 10.3% | 91.7% |
+| Roma Termini | 10.8% | 95.9% |
+| Napoli Centrale | 1.8% | 63.6% |
+| Firenze Santa Maria Novella | 0% | No accepted estimates |
+| Torino Porta Nuova | 0% | No accepted estimates |
+
+These measurements apply to the earlier backtest models and observed online reports.
+They are not guarantees for new trains or physical platforms.
+The deployed models were refitted on all available labelled data after evaluation.
+Model files and detailed reports remain local in `rfi/models/`.
+
 ## Serve predictions
 
 Start the shared SNCF and RFI server from the repository root:

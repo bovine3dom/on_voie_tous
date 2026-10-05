@@ -69,7 +69,7 @@ def metrics(model, train, evaluation, confidence=0.8):
     }
 
 
-def train_station(station, df, output, iterations=300, threads=4, minimum=50, refit=False):
+def train_station(station, df, output, iterations=100, threads=4, minimum=50, refit=False):
     report = {"station_id": station, "rows": df.height,
               "departures": df["departureId"].n_unique()}
     split = chronological_split(df)
