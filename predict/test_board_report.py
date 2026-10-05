@@ -16,6 +16,7 @@ def test_report_preserves_ids_and_separates_missing_and_published_cases(tmp_path
         {"station_id": "4", "status": "insufficient_days", "departures": 2},
     ]}
     export(report, audit, output)
+    assert b"\r" not in output.read_bytes()
     with output.open(newline="") as source:
         small, station = list(csv.DictReader(source))
     assert small["station_id"] == "4"

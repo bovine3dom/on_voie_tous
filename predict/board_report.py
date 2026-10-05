@@ -13,7 +13,7 @@ def export(report, station_audit, output):
         fields.extend(f"{group}_{field}" for field in ("departures", "accuracy_pct", "baseline_accuracy_pct"))
     fields.extend(["official_accuracy_pct", "model_last_date"])
     with output.open("w", newline="") as target:
-        writer = csv.DictWriter(target, fieldnames=fields)
+        writer = csv.DictWriter(target, fieldnames=fields, lineterminator="\n")
         writer.writeheader()
         for station in sorted(report["stations"], key=lambda row: int(row["station_id"])):
             row = {"station_id": station["station_id"], "station_name": names.get(station["station_id"], ""),
