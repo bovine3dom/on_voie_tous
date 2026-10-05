@@ -14,13 +14,13 @@ MODELS_DIR = Path(os.getenv("RFI_MODELS_DIR", Path(__file__).resolve().parent / 
 
 
 class Train(BaseModel):
-    trainId: str = Field(min_length=1, max_length=200)
+    trainId: str = Field(min_length=1)
     trainNumber: str
     clock: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
     destination: str
     carrier: str = ""
     category: str = ""
-    delayMinutes: int = Field(default=0, ge=-1, le=719)
+    delayMinutes: int = 0
     platform: str = ""
     cancelled: bool = False
 
@@ -28,7 +28,7 @@ class Train(BaseModel):
 class Input(BaseModel):
     ts: AwareDatetime
     station: str = Field(pattern=r"^[0-9]{1,12}$")
-    data: list[Train] = Field(max_length=100)
+    data: list[Train]
 
 
 class Prediction(TrainPrediction):

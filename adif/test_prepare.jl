@@ -53,20 +53,23 @@ latest(value="2EST"; kwargs...) = board(at="2026-04-01T10:30:00Z", platform=valu
     @test ADIF.rows(parsed(prefixed...), Set(["51003"])) == ADIF.rows(scan, Set(["51003"]))
 end
 
-@testset "Distinct source updates, cancellation, and invalid observations" begin
-    @test isempty(ADIF.rows(parsed(board(), late(), latest(source="2026-04-01T10:25:00Z")), Set(["51003"])))
-    @test isempty(ADIF.rows(parsed(board(), late("1"), latest("2")), Set(["51003"])))
-    @test isempty(ADIF.rows(parsed(board(), late(), latest(), latest("3")), Set(["51003"])))
-    @test isempty(ADIF.rows(parsed(board(), late(), latest(), board(observation="Tren cancelado")), Set(["51003"])))
+@testset "Final observations, cancellation, and invalid observations" begin
+    @test !isempty(ADIF.rows(parsed(board(), late(), latest(source="2026-04-01T10:25:00Z")), Set(["51003"])))
+    @test all(x.actualPlatform == "2" for x in ADIF.rows(parsed(board(), late("1"), latest("2")), Set(["51003"]))["51003"])
+    @test all(x.actualPlatform == "3" for x in ADIF.rows(parsed(board(), late(), latest(), latest("3")), Set(["51003"]))["51003"])
+    @test !isempty(ADIF.rows(parsed(board(observation="Tren cancelado"), late(), latest()), Set(["51003"])))
+    @test isempty(ADIF.rows(parsed(board(), late(), latest(status="cancelled")), Set(["51003"])))
+    @test only(ADIF.rows(parsed(board(platform="1"), latest("2")), Set(["51003"]))["51003"]).actualPlatform == "2"
     @test isempty(parsed(board(stop="destination")).runs)
     @test isempty(ADIF.rows(parsed(board(), late(), latest(), latest("BUS")), Set(["51003"])))
-    @test only(values(parsed(board(traffic="B")).runs)).bus
-    @test only(values(parsed(board(number="BUS00123")).runs)).bus
-    @test only(values(parsed(board(platform="BUS")).runs)).bus
+    @test ADIF.Training.excluded(only(values(parsed(board(traffic="B")).runs)))
+    @test ADIF.Training.excluded(only(values(parsed(board(number="BUS00123")).runs)))
+    @test ADIF.Training.excluded(only(values(parsed(board(platform="BUS")).runs)))
     @test isempty(parsed(board(platform_cell=false)).runs)
     @test isempty(parsed(board(departure="2026-04-01T12:30:00")).runs)
-    @test isempty(parsed(board(source="2026-04-01T09:49:59Z")).runs)
-    @test isempty(parsed(board(source="2026-04-01T10:01:00Z")).runs)
+    for source in ("2026-04-01T09:49:59Z", "2026-04-01T10:01:00Z", "", nothing)
+        @test !isempty(parsed(board(; source)).runs)
+    end
     control = JSON3.write((ts="2026-04-01T10:00:00Z", station="ECM-51003", data=(type=3, result=nothing)))
     @test parsed(control).statistics["control_messages"] == 1
     empty_payload = JSON3.write((ts="2026-04-01T10:00:00Z", station="es-adif",
@@ -82,12 +85,38 @@ end
                   board(at="2026-04-01T10:45:00Z", delay=20, platform="2EST"),
                   board(at="2026-04-01T10:50:00Z", delay=20, platform="2EST"))
     rows = ADIF.rows(scan, Set(["51003"]))["51003"]
-    @test Set(row.leadMinutes for row in rows) == Set([240.0, -5.0])
+    @test Set(row.leadMinutes for row in rows) == Set([240.0, -5.0, -15.0])
     @test all(row.timestamp < row.labelTimestamp for row in rows)
     @test sum(row.weight for row in rows) ≈ 1
     @test isempty(ADIF.rows(scan, Set(["99999"])))
     @test isempty(scan.availability.runs)
     @test ADIF.rows(ADIF.merge!(ADIF.Scan(), scan), Set(["51003"]))["51003"] == rows
+end
+
+@testset "All observations, final changes, and reinstatement" begin
+    observations = [board(at=at, platform=p, delay=d, source="2026-04-01T00:00:00Z") for (at, p, d) in (
+        ("2026-04-01T06:30:00Z", "", 1440),
+        ("2026-04-01T10:17:00Z", "1", -15),
+        ("2026-04-01T10:18:00Z", "2", 0),
+        ("2026-04-01T10:35:00Z", "3", 0),
+        ("2026-04-01T11:30:00Z", "4", 0))]
+    selected = Set(["51003"])
+    scan = parsed(observations...)
+    rows = ADIF.rows(scan, selected)["51003"]
+    @test [x.leadMinutes for x in rows] == [240, 13, 12, -5]
+    @test [x.predictedPlatform for x in rows] == ["MISSING", "1", "2", "3"]
+    @test [x.delayMinutes for x in rows] == [1440, -15, 0, 0]
+    @test all(x.actualPlatform == "4" && x.timestamp < x.labelTimestamp for x in rows)
+    @test sum(x.weight for x in rows) ≈ 1
+    @test ADIF.rows(parsed(reverse(observations)...), selected) == ADIF.rows(scan, selected)
+    cancelled = board(at="2026-04-01T10:20:00Z", status="cancelled")
+    for merged in (ADIF.merge!(parsed(observations...), parsed(cancelled)),
+                   ADIF.merge!(parsed(cancelled), parsed(reverse(observations)...)))
+        @test ADIF.rows(merged, selected) == ADIF.rows(scan, selected)
+    end
+    conflict = parsed(late("1"), late("2"))
+    @test ADIF.rows(ADIF.merge!(conflict, parsed(latest("3"))), selected)["51003"][1].actualPlatform == "3"
+    @test isempty(ADIF.rows(parsed(board(), latest("")), selected))
 end
 
 @testset "Delay, sampling weights, and archive cache" begin

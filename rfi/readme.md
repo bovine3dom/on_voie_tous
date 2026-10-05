@@ -24,7 +24,7 @@ Use `--stations 1728 2416` to train selected stations.
 Every selected station with labelled departures receives a predictor.
 Single-platform or constant-input histories use `.prior.json` frequency predictors instead of CatBoost models.
 
-Models predict the last stable platform reported near departure.
+Models use observations at all lead times to predict the last known platform. Rebuild training data and models to apply this change.
 `report.json` compares the model with a historical-frequency baseline.
 It has separate results for blank, published, and changed platforms.
 Training still runs if a chronological evaluation is unavailable; no accuracy estimate is recorded.

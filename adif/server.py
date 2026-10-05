@@ -14,7 +14,7 @@ MODELS_DIR = Path(os.getenv("ADIF_MODELS_DIR", Path(__file__).resolve().parent /
 
 
 class Train(BaseModel):
-    trainId: str = Field(min_length=1, max_length=200)
+    trainId: str = Field(min_length=1)
     trainNumber: str
     scheduledTime: AwareDatetime
     stopType: Literal["origin", "intermediate", "destination"]
@@ -23,7 +23,7 @@ class Train(BaseModel):
     category: str = ""
     trafficType: str = ""
     status: str = ""
-    delayMinutes: int = Field(default=0, ge=-1, le=719)
+    delayMinutes: int = 0
     platform: str = ""
     cancelled: bool = False
 
@@ -31,7 +31,7 @@ class Train(BaseModel):
 class Input(BaseModel):
     ts: AwareDatetime
     station: str = Field(pattern=r"^[0-9]{1,12}$")
-    data: list[Train] = Field(max_length=100)
+    data: list[Train]
 
 
 @app.get("/adif/stations")

@@ -11,20 +11,8 @@ end
 const HORIZONS = Training.HORIZONS
 const MADRID = tz"Europe/Madrid"
 const Key = Tuple{String,Date,String,Int}
-const PARSER_VERSION = 4
-const SAMPLE_MINUTES = 15
-
-mutable struct Departure
-    early::NTuple{4,Union{Nothing,Training.Snapshot}}
-    samples::Dict{Int,Training.Snapshot}
-    terminal::Vector{Tuple{Int64,String}}
-    received::Vector{Tuple{Int64,Int64}}
-    cancelled::Bool
-    bus::Bool
-    conflict::Bool
-end
-Departure() = Departure((nothing, nothing, nothing, nothing), Dict{Int,Training.Snapshot}(),
-                        Tuple{Int64,String}[], Tuple{Int64,Int64}[], false, false, false)
+const PARSER_VERSION = 5
+const Departure = Training.Departure
 
 struct Scan
     availability::Availability.Scan
@@ -55,53 +43,9 @@ end
 localtime(at) = astimezone(ZonedDateTime(unix2datetime(at), tz"UTC"), MADRID)
 platform(value) = uppercase(strip(value)) in ("", "-", "--", "—", "?", "N/A", "ND", "N.D.", "SIN ASIGNAR") ? "" : strip(value)
 
-function terminal!(state, source, received, value)
-    Training.terminal!(state, source, value)
-    any(x -> x[1] == source, state.terminal) || return
-    index = findfirst(x -> x[1] == source, state.received)
-    if isnothing(index)
-        push!(state.received, (source, received))
-    else
-        state.received[index] = (source, min(received, state.received[index][2]))
-    end
-    filter!(x -> any(t -> t[1] == x[1], state.terminal), state.received)
-end
-
-function target(state)
-    if state.cancelled || state.bus || state.conflict || length(state.terminal) < 2 || state.terminal[1][2] != state.terminal[2][2]
-        return nothing
-    end
-    source, value = first(state.terminal)
-    received = only(x[2] for x in state.received if x[1] == source)
-    value, received
-end
-
-function snapshot!(state, sample)
-    Training.snapshot!(state, sample)
-    bucket = floor(Int, sample.lead / SAMPLE_MINUTES)
-    old = get(state.samples, bucket, nothing)
-    if isnothing(old) || sample.timestamp < old.timestamp ||
-       (sample.timestamp == old.timestamp && !isempty(sample.platform))
-        state.samples[bucket] = sample
-    end
-end
-
 function merge!(a, b)
     Availability.merge_scan!(a.availability, b.availability)
-    for (key, incoming) in b.runs
-        state = get!(Departure, a.runs, key)
-        state.cancelled |= incoming.cancelled
-        state.bus |= incoming.bus
-        state.conflict |= incoming.conflict
-        for (source, value) in incoming.terminal
-            received = only(x[2] for x in incoming.received if x[1] == source)
-            terminal!(state, source, received, value)
-        end
-        for sample in incoming.early
-            isnothing(sample) || Training.snapshot!(state, sample)
-        end
-        foreach(sample -> snapshot!(state, sample), values(incoming.samples))
-    end
+    Training.merge_departures!(a.runs, b.runs)
     for (key, value) in b.statistics
         count!(a, key, value)
     end
@@ -130,12 +74,6 @@ function board!(scan, board, now, times, dates)
     if at >= station.last
         station.last = at
         station.name = text(settings, :name, station.name)
-    end
-    source = instant(get(settings, :data_time, nothing))
-    if isnothing(source) || source > now + 5 || now - source > 600
-        station.invalid += 1
-        count!(scan, "invalid_or_stale_boards")
-        return
     end
     for train in trains
         station.rows += 1
@@ -166,9 +104,8 @@ function board!(scan, board, now, times, dates)
         end
         lead = (scheduled - now) / 60
         delay = tryparse(Int, text(train, :delay_out, "0"))
-        delay = !isnothing(delay) && 0 <= delay < 720 ? delay : -1
+        delay = something(delay, -1)
         early = any(h -> h <= lead <= h + Training.TOLERANCE, HORIZONS)
-        near = delay >= 0 && -10 <= lead + delay <= 15
         cancelled = occursin(r"(?i)cancel|suprimid|anulad", text(train, :status) * " " * text(train, :observation))
         carrier = text(train, :company)
         category = join(sort!(unique([text(product, :product) for product in items(train, :commercial_id)])), "|")
@@ -179,8 +116,7 @@ function board!(scan, board, now, times, dates)
         end
         key = (id, day, number, scheduled)
         state = get!(Departure, scan.runs, key)
-        state.cancelled |= cancelled
-        state.bus |= bus
+        Training.status!(state, now, cancelled, bus)
         if cancelled || bus
             station.cancelled += cancelled
             station.bus += bus
@@ -193,8 +129,7 @@ function board!(scan, board, now, times, dates)
             Availability.observe!(audit_state, lead, known)
         end
         destination = join(sort!(unique([text(item, :code) for item in items(train, :destinations)])), "|")
-        snapshot!(state, Training.Snapshot(now, lead, number, destination, carrier, category, delay, value))
-        near && known && terminal!(state, source, now, value)
+        Training.snapshot!(state, Training.Snapshot(now, lead, number, destination, carrier, category, delay, value))
     end
 end
 
@@ -227,7 +162,7 @@ end
 
 function scan_file(path, cache_dir)
     fingerprint = (abspath(path), filesize(path), mtime(path), string(VERSION), PARSER_VERSION)
-    cache = joinpath(cache_dir, basename(path) * ".jls")
+    cache = joinpath(cache_dir, "v$(PARSER_VERSION)-" * basename(path) * ".jls")
     if isfile(cache)
         saved = deserialize(cache)
         saved.fingerprint == fingerprint && return saved.scan, true
@@ -255,17 +190,17 @@ function revisions(scan, lead)
     index = only(findall(==(lead), HORIZONS))
     result = Dict{Tuple{String,String},Vector{Int}}()
     for ((id, day, _, _), state) in scan.runs
-        label = target(state)
+        label = Training.target(state)
         sample = state.early[index]
         isnothing(label) && continue
         isnothing(sample) && continue
-        sample.timestamp >= label[2] && continue
+        sample.timestamp >= label[1] && continue
         for period in ("all", Dates.format(day, dateformat"yyyy-mm"))
             n = get!(() -> zeros(Int, 3), result, (id, period))
             n[1] += 1
             if !isempty(sample.platform)
                 n[2] += 1
-                n[3] += sample.platform != label[1]
+                n[3] += sample.platform != label[2]
             end
         end
     end
@@ -276,15 +211,11 @@ function rows(scan, selected)
     result = Dict{String,Vector{NamedTuple}}()
     for ((id, day, number, scheduled), state) in sort!(collect(scan.runs); by=first)
         id in selected || continue
-        label = target(state)
+        label = Training.target(state)
         isnothing(label) && continue
-        value, received = label
-        samples = Tuple{Int,Training.Snapshot}[(h, x) for (h, x) in zip(HORIZONS, state.early)
-                                              if !isnothing(x) && x.timestamp < received]
-        audit_times = Set(x.timestamp for (_, x) in samples)
-        append!(samples, [(-1, x) for x in values(state.samples) if x.timestamp < received && !(x.timestamp in audit_times)])
+        received, value = label
+        samples = Training.labelled_samples(state, received)
         isempty(samples) && continue
-        sort!(samples; by=x -> x[2].timestamp)
         local_at = localtime(scheduled)
         for (horizon, sample) in samples
             row = (station=id, departureId=join((day, number, scheduled), "|"), serviceDate=string(day),
@@ -304,7 +235,7 @@ function reports(scan, files, output, lead, minimum, rate, elapsed, hits; minimu
     mkpath(output)
     filter!(scan.availability.runs) do (key, _)
         state = scan.runs[key]
-        !state.cancelled && !state.bus
+        !Training.excluded(state)
     end
     totals = Availability.counts(scan.availability)
     later = revisions(scan, lead)
@@ -345,7 +276,7 @@ function reports(scan, files, output, lead, minimum, rate, elapsed, hits; minimu
     end
     metadata = (; operator="adif", parser_version=PARSER_VERSION, lead_minutes=lead, tolerance_minutes=Training.TOLERANCE,
                  minimum_departures=minimum, minimum_overrides=minimums, missing_rate_threshold=rate,
-                 max_source_age_seconds=600, archives=length(files), compressed_bytes=sum(filesize, files),
+                 archives=length(files), compressed_bytes=sum(filesize, files),
                  first_observation=isempty(scan.availability.stations) ? nothing : Availability.minimum_datetime(scan.availability),
                  last_observation=isempty(scan.availability.stations) ? nothing : Availability.maximum_datetime(scan.availability),
                  elapsed_seconds=round(elapsed; digits=2), cached_archives=hits,
@@ -415,11 +346,11 @@ function prepare(args=ARGS)
             rm(path)
         end
     end
-    metadata = (; operator="adif", schema_version=2, parser_version=PARSER_VERSION, snapshot_interval_minutes=SAMPLE_MINUTES,
+    metadata = (; operator="adif", schema_version=2, parser_version=PARSER_VERSION,
                  archives=basename.(files), selected_stations=sort!(collect(selected)),
                  cached_archives=hits[], elapsed_seconds=round(time()-started; digits=2), departures=length(scan.runs),
                  rows=sum(length, values(station_rows); init=0), station_rows=Dict(s => length(get(station_rows, s, [])) for s in selected),
-                 horizons=HORIZONS, label_window_minutes=[-10, 15], label_observations=2)
+                 horizons=HORIZONS, label_policy="last_known_platform")
     open(joinpath(hive, "dataset.json"), "w") do io
         JSON3.pretty(io, JSON3.write(metadata))
     end

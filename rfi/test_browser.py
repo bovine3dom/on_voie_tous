@@ -81,6 +81,18 @@ def test_client_merges_low_score_neighbours_before_display_filter(page, probabil
     assert page.locator('[data-test-id="22"] [id="RBinario"]').inner_text() == "20B"
 
 
+def test_large_and_negative_delays_reach_the_server(page):
+    calls = []
+    page.locator("table").evaluate("(el, html) => el.innerHTML = html", row("11", delay="1440") + row("22", delay="-15"))
+    def respond(route):
+        calls.append(route.request.post_data_json)
+        route.fulfill(json=predictions())
+    page.route("**/predict?operator=rfi", respond)
+    page.add_script_tag(path=str(SCRIPT))
+    pw.expect(page.locator(".on-voie-rfi-estimate")).to_have_count(2)
+    assert [t["delayMinutes"] for t in calls[0]["data"]] == [1440, -15]
+
+
 def test_an_official_update_discards_stale_scores_and_requests_new_ones(page):
     calls = []
     def respond(route):

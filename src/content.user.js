@@ -294,7 +294,7 @@
                 const trainId = row.querySelector('[id^="btn_"]')?.id.slice(4) || [trainNumber, carrier, destination].join('|');
                 return [{row, platform, data: {
                     trainId, trainNumber, clock, destination, carrier, category,
-                    delayMinutes: delay === '' ? 0 : /^\d+$/.test(delay) && Number(delay) < 720 ? Number(delay) : -1,
+                    delayMinutes: delay === '' ? 0 : /^[+-]?\d+$/.test(delay) ? Number(delay) : -1,
                     cancelled: /cancellat|soppress|cancelled|canceled/i.test(delay),
                     platform: official(platform),
                 }}];
