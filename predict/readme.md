@@ -1,24 +1,25 @@
-# grab data
+# SNCF models
 
+Run these commands from `predict/`.
 
-```
+## Get archives
+
+```bash
 rsync -rlt --include="*.zst" --include='*/' --exclude='*' --info=progress2 the_server:/mnt/chungus/slowjects/datagrabber/data/sncf-gares-connexions/ .
 ```
 
-# train
+## Train
 
-```
+Station data must be in `sncf-hive/`.
+
+```bash
 uv run model.py
 ```
 
+## Run the server
 
-# predict
-
-```
+```bash
 uv run predict.py
 ```
 
-
-except not yet. prediction interface to be finalised. probably don't really want to send the entire response, should only get the bits we want
-
-also todo: convert utc times to local times and hour, minute, day of week, day of month etc
+See [rfi/](../rfi/readme.md) for RFI data and models.

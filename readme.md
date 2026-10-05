@@ -17,15 +17,9 @@ For other browsers that support userscripts, if you have e.g. Tampermonkey insta
 
 ## RFI departure boards
 
-The same userscript also supports [RFI departure monitors](https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor?placeId=1728&arrivals=False).
-Update or install `src/content.user.js`. Remove the old separate `rfi.user.js` userscript if you installed it.
-RFI platforms use `official | predicted`, as in SNCF.
-The current official platform is also a model input.
-Official text remains unchanged. Use station monitors and announcements as the authority.
-
-The shared API must run `predict.server` with RFI models before estimates are available.
-See [the RFI instructions](rfi/readme.md) for training, server setup, and tests.
-These changes do not update the public server or the store extension.
+Use [the userscript](src/content.user.js) for [RFI departure boards](https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor?placeId=1728&arrivals=False).
+Platforms appear as `official | predicted`.
+See [rfi/](rfi/readme.md) to train models or run the server.
 
 ## Disclaimer
 
