@@ -55,8 +55,9 @@ def get_model(station_id: str, models_dir=None) -> CatBoostClassifier | Platform
         raise HTTPException(status_code=400, detail="Invalid station ID")
     directory = os.path.abspath(MODELS_DIR if models_dir is None else models_dir)
     key = (directory, station_id)
-    if key in _model_cache:
-        return _model_cache[key]
+    cached = _model_cache.get(key)
+    if cached is not None and (models_dir is not None or not isinstance(cached, PlatformPrior)):
+        return cached
 
     model_path = os.path.join(directory, f"{station_id}.cbm")
     prior_path = os.path.join(directory, f"{station_id}.prior.json")

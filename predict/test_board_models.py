@@ -53,6 +53,7 @@ def test_default_sncf_route_does_not_load_board_priors(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "MODELS_DIR", str(tmp_path))
     PlatformPrior(["20B"], [1.0]).save_model(tmp_path / "51003.prior.json")
     assert module.available_stations() == {"stations": []}
+    assert isinstance(get_model("51003", tmp_path), PlatformPrior)
     with pytest.raises(HTTPException) as error:
         get_model("51003")
     assert error.value.status_code == 404
