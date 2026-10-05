@@ -94,7 +94,7 @@ Single-platform histories or constant inputs use a weighted platform-frequency p
 The API serves both formats. A single observed platform receives a score of one, not a guarantee of future use.
 Only stations without labelled departures cannot receive a predictor.
 
-## Earlier results after the five-departure recheck: 5 October 2026
+## Results after the five-departure recheck: 5 October 2026
 
 The run read 75 archives, with 661 stations in the feed.
 Only four service dates had usable departure observations: 7–8 July and 4–5 October 2026.
@@ -117,24 +117,27 @@ For example, missing platforms at 30 minutes were 96.8% at Madrid Chamartín and
 Stations with insufficient observations are not confirmed skips.
 
 Julia produced 242,458 examples from 8,525 labelled departures at 61 selected stations.
-Six selected stations had no stable targets. Twenty lacked three service dates.
-Twenty-six had insufficient training data, and one had a single training platform.
-Fourteen stations still produced models. The new candidates do not yet meet the training requirements.
-A lower audit minimum does not supply more training history.
-The models were refitted on all labelled data after evaluation.
+All 61 now have predictors: 32 CatBoost models and 29 single-platform predictors.
+The smallest CatBoost history contains eight departures.
+Six selected stations had no stable targets and cannot yet receive predictors.
 
-Training used the available July dates. Validation used 4 October, and testing used 5 October.
-At 30 minutes, the highest-score platform agreed with the later report as follows:
+Forty-one stations had usable chronological evaluation periods; twenty did not.
+The latter predictors fit all labelled data, with no accuracy estimate.
+All other predictors were also refitted on all labelled data after evaluation.
+Training used July observations. Testing used 5 October.
+Validation used the last earlier service date, usually 4 October.
+Forty stations had test cases at 30 minutes.
+The highest-score platform agreed with the later report as follows:
 
-| Cases | Departures | CatBoost | Historical frequency |
+| Cases | Departures | Predictor | Historical frequency |
 | --- | ---: | ---: | ---: |
-| All | 2,005 | 59.1% | 43.7% |
-| Blank official platform | 1,433 | 51.8% | 41.1% |
-| Published official platform | 572 | 77.4% | 50.2% |
-| Published platform later changed | 16 | 18.8% | 18.8% |
+| All | 2,358 | 60.6% | 46.4% |
+| Blank official platform | 1,575 | 54.2% | 43.9% |
+| Published official platform | 783 | 73.3% | 51.2% |
+| Published platform later changed | 22 | 22.7% | 22.7% |
 
 Copying the early official platform agreed with 97.2% of later published targets.
-CatBoost improved the blank-platform result, but was worse than copying published official platforms.
+The predictors improved the blank-platform result, but were worse than copying published official platforms.
 Only four observed dates support these results. Use the models as experiments, not guarantees.
 Station monitors and announcements remain the authority.
 
