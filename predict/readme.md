@@ -22,4 +22,7 @@ uv run model.py --data /mnt/sncf-hive --models models-v2
 SNCF_MODELS_DIR=models-v2 uv run predict.py
 ```
 
+Keep `models/` for fallback. Set `SNCF_MODELS_DIR=models` to use the old models.
+Restart the server after you change the model directory.
+
 See [rfi/](../rfi/readme.md) for RFI data and models.
