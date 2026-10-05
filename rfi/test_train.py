@@ -6,7 +6,7 @@ import sys
 import polars as pl
 from catboost import CatBoostClassifier
 
-from rfi.features import FEATURES, feature_frame
+from rfi.features import FEATURES, SCHEMA_VERSION, feature_frame
 from rfi.train import chronological_split, train_station
 
 
@@ -20,6 +20,7 @@ def data(days=12):
                     departureId=f"{day}|{train}", serviceDate=f"2026-04-{day:02d}",
                     timestamp=scheduled-horizon*60, scheduledTime=scheduled,
                     labelTimestamp=scheduled, horizon=horizon, trainNumber=str(train),
+                    predictedPlatform=("2EST" if train % 2 else "20B") if train < 5 else "MISSING",
                     predictedDestination="ROMA" if train % 2 else "MILANO",
                     carrier="TRENITALIA", trainType="REG", delayMinutes=0,
                     scheduledMinute=700+train, dayOfWeek=(day-1) % 7+1, month=4,
@@ -43,6 +44,9 @@ def test_training_and_string_platform_round_trip(tmp_path):
     assert set(report["classes"]) == {"2EST", "20B"}
     assert report["test"]["accuracy"] == 1
     assert report["test"]["baseline_accuracy"] == 1
+    assert report["test"]["blank"]["departures"] == 10
+    assert report["test"]["published"]["departures"] == 10
+    assert report["test"]["official_accuracy"] == 1
     model = CatBoostClassifier()
     model.load_model(str(tmp_path / "1728.cbm"))
     assert list(model.feature_names_) == FEATURES
@@ -88,7 +92,7 @@ def test_parallel_cli_and_stale_model_cleanup(tmp_path):
         folder = hive / f"station={station}"
         folder.mkdir()
         data().write_ipc(folder / "part0.arrow")
-    (hive / "dataset.json").write_text(json.dumps({"schema_version": 1, "station_rows": {"1": 240, "2": 240}}))
+    (hive / "dataset.json").write_text(json.dumps({"schema_version": SCHEMA_VERSION, "station_rows": {"1": 240, "2": 240}}))
     subprocess.run([sys.executable, "-m", "rfi.train", "--data", str(hive), "--models", str(models),
                     "--iterations=5", "--threads=1", "--workers=2", "--min-trains=10", "--refit"],
                    cwd=Path(__file__).resolve().parents[1], check=True, capture_output=True, timeout=45)

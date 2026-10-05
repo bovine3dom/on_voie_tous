@@ -36,7 +36,7 @@ def pool(df: pl.DataFrame) -> Pool:
 
 
 def baseline(train: pl.DataFrame, evaluation: pl.DataFrame):
-    keys = CAT_COLS
+    keys = [name for name in CAT_COLS if name != "predictedPlatform"]
     departures = train.unique("departureId")
     common = Counter(departures["actualPlatform"].to_list()).most_common(1)[0][0]
     grouped = {}
@@ -49,7 +49,7 @@ def baseline(train: pl.DataFrame, evaluation: pl.DataFrame):
 
 
 def metrics(model, train, evaluation, confidence=0.8):
-    # The selection audit and primary usefulness measure use 30-minute cases.
+    # Keep blank, published, and revised platforms separate at the audit horizon.
     evaluation = evaluation.filter(pl.col("horizon") == 30)
     if evaluation.is_empty():
         return {"departures": 0}
@@ -58,14 +58,31 @@ def metrics(model, train, evaluation, confidence=0.8):
     labels = np.array(evaluation["actualPlatform"].to_list())
     correct = predicted == labels
     accepted = probabilities.max(axis=1) >= confidence
-    return {
-        "departures": evaluation.height,
-        "accuracy": float(correct.mean()),
-        "baseline_accuracy": float((baseline(train, evaluation) == labels).mean()),
-        "confidence_threshold": confidence,
-        "coverage": float(accepted.mean()),
-        "selective_accuracy": float(correct[accepted].mean()) if accepted.any() else None,
-        "unseen_platforms": int((~np.isin(labels, model.classes_)).sum()),
+    historical = baseline(train, evaluation) == labels
+    published = np.array(evaluation["predictedPlatform"].to_list()) != "MISSING"
+    changed = published & (np.array(evaluation["predictedPlatform"].to_list()) != labels)
+    unseen = ~np.isin(labels, model.classes_)
+
+    def measure(mask):
+        n = int(mask.sum())
+        if not n:
+            return {"departures": 0}
+        selected = mask & accepted
+        return {
+            "departures": n,
+            "accuracy": float(correct[mask].mean()),
+            "baseline_accuracy": float(historical[mask].mean()),
+            "confidence_threshold": confidence,
+            "coverage": float(accepted[mask].mean()),
+            "selective_accuracy": float(correct[selected].mean()) if selected.any() else None,
+            "unseen_platforms": int(unseen[mask].sum()),
+        }
+
+    return measure(np.ones(len(labels), dtype=bool)) | {
+        "blank": measure(~published),
+        "published": measure(published),
+        "changed": measure(changed),
+        "official_accuracy": float((~changed[published]).mean()) if published.any() else None,
     }
 
 

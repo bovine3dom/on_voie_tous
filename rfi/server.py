@@ -8,7 +8,7 @@ from pydantic import AwareDatetime, BaseModel, Field
 import uvicorn
 
 from predict.predict import app, get_model, HOST, PORT, TrainPrediction
-from .features import FEATURES, feature_frame, live_features, platform_known
+from .features import FEATURES, feature_frame, live_features
 
 MODELS_DIR = Path(os.getenv("RFI_MODELS_DIR", Path(__file__).resolve().parent / "models"))
 
@@ -50,7 +50,7 @@ def available_stations():
 def rfi_predict(payload: Input):
     selected, rows = [], []
     for train in payload.data:
-        if train.cancelled or platform_known(train.platform):
+        if train.cancelled:
             continue
         if re.search(r"\bbus|autobus|pullman|autoserv|autocors", train.carrier + " " + train.category, re.I):
             continue

@@ -19,8 +19,9 @@ For other browsers that support userscripts, if you have e.g. Tampermonkey insta
 
 The same userscript also supports [RFI departure monitors](https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor?placeId=1728&arrivals=False).
 Update or install `src/content.user.js`. Remove the old separate `rfi.user.js` userscript if you installed it.
-RFI estimates appear as `Stima` only where the official platform is blank.
-Published platforms remain unchanged. Use station monitors and announcements as the authority.
+RFI platforms use `official | predicted`, as in SNCF.
+The current official platform is also a model input.
+Official text remains unchanged. Use station monitors and announcements as the authority.
 
 The shared API must run `predict.server` with RFI models before estimates are available.
 See [the RFI instructions](rfi/readme.md) for training, server setup, and tests.

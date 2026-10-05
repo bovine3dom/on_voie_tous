@@ -9,7 +9,7 @@ struct Snapshot
     carrier::String
     category::String
     delay::Int
-    published::Bool
+    platform::String
 end
 
 mutable struct Departure
@@ -37,7 +37,7 @@ function snapshot!(state, sample)
         horizon <= sample.lead <= horizon + TOLERANCE || continue
         old = state.early[i]
         if isnothing(old) || sample.timestamp > old.timestamp ||
-           (sample.timestamp == old.timestamp && sample.published)
+           (sample.timestamp == old.timestamp && platform_known(sample.platform))
             state.early = Base.setindex(state.early, sample, i)
         end
     end
@@ -107,13 +107,13 @@ function training_line!(runs, line, stations, times)
         end
         if early
             snapshot!(state, Snapshot(now, lead, number, destination, carrier, category,
-                                      something(delay, -1), known))
+                                      something(delay, -1), platform))
         end
     end
 end
 
 function training_file(path, stations, cache_dir)
-    fingerprint = (abspath(path), filesize(path), mtime(path), string(VERSION), 1, sort!(collect(stations)))
+    fingerprint = (abspath(path), filesize(path), mtime(path), string(VERSION), 2, sort!(collect(stations)))
     cache = joinpath(cache_dir, basename(path) * ".jls")
     if isfile(cache)
         saved = deserialize(cache)
@@ -144,15 +144,16 @@ function training_rows(runs)
            state.terminal[1][2] != state.terminal[2][2]
             continue
         end
-        samples = [(h, x) for (h, x) in zip(HORIZONS, state.early) if !isnothing(x) && !x.published]
-        isempty(samples) && continue
         label_at, platform = state.terminal[1]
+        samples = [(h, x) for (h, x) in zip(HORIZONS, state.early)
+                   if !isnothing(x) && x.timestamp < label_at]
+        isempty(samples) && continue
         scheduled = Int64(scheduled_utc(day, clock, Dict{Tuple{Date,Int},Float64}()))
         for (horizon, sample) in samples
-            sample.timestamp < label_at || continue
             row = (station=station, departureId=join((day, token, clock), "|"), serviceDate=string(day),
                    timestamp=sample.timestamp, scheduledTime=scheduled, labelTimestamp=label_at,
-                   horizon=horizon, trainNumber=sample.number, predictedDestination=sample.destination,
+                   horizon=horizon, predictedPlatform=platform_known(sample.platform) ? sample.platform : "MISSING",
+                   trainNumber=sample.number, predictedDestination=sample.destination,
                    carrier=sample.carrier, trainType=sample.category, delayMinutes=sample.delay,
                    scheduledMinute=clock, dayOfWeek=dayofweek(day), month=month(day),
                    leadMinutes=sample.lead, weight=1.0 / length(samples), actualPlatform=platform)
@@ -177,7 +178,7 @@ function wrangle(args=ARGS)
     limit > 0 || error("Limit must be positive")
     files = files[1:min(limit, length(files))]
     isempty(files) && error("No archives found")
-    cache_dir = joinpath(@__DIR__, ".cache", "training-v1")
+    cache_dir = joinpath(@__DIR__, ".cache", "training-v2")
     mkpath(cache_dir)
     workers = min(Threads.nthreads(), length(files))
     chunks = [Departures() for _ in 1:workers]
@@ -213,7 +214,7 @@ function wrangle(args=ARGS)
             rm(path)
         end
     end
-    metadata = (; schema_version=1, archives=basename.(files), selected_stations=sort!(collect(stations)),
+    metadata = (; schema_version=2, archives=basename.(files), selected_stations=sort!(collect(stations)),
                  cached_archives=hits[], elapsed_seconds=round(time() - started; digits=2),
                  departures=length(runs), rows=sum(length, values(rows); init=0),
                  station_rows=Dict(s => length(get(rows, s, [])) for s in stations),

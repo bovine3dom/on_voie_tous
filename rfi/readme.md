@@ -47,13 +47,16 @@ Julia writes `rfi/hive/station=ID/part0.arrow` and `rfi/hive/dataset.json`.
 Python can load one station at a time with the SNCF Arrow loader.
 Archive summaries are cached separately from the availability audit.
 
-Each departure supplies at most one blank-platform example at each saved lead time.
+Each departure supplies at most one example at each saved lead time.
+Examples include both blank and published official platforms.
 Examples share a departure ID and a total training weight of one.
 The label is the last reported platform near the delay-adjusted departure.
 The accepted window is 15 minutes before departure through 10 minutes after departure.
 The final two distinct observations must agree.
 Cancelled trains, buses, conflicting timestamps, and departures without stable labels are excluded.
-A published early platform is never used as an input or a training example.
+Each example uses the official platform from its own snapshot as a categorical input.
+The later target is not used as an input.
+Schema version 2 requires new Arrow files and retrained models.
 This label is not proof of the physical platform used.
 
 ## Train and evaluate
@@ -80,20 +83,21 @@ Validation log loss selects the tree count. Test data is not used for training.
 Unknown test platforms remain in the accuracy denominator.
 
 `rfi/models/report.json` records accuracy, coverage, and a historical-frequency baseline.
-The primary measurements use only blank-platform cases at the 30-minute lead time.
+The measurements use 30-minute cases, with separate results for blank, published, and changed platforms.
+Published cases also record agreement between the early official platform and the later target.
 The confidence scores are raw CatBoost probabilities, not calibrated accuracy estimates.
 Saved models use only the training period by default.
 Use `--refit` to train the deployed model on all data after evaluation.
 The report keeps the earlier backtest measurements separate from the deployed model's date and classes.
 
-## MVP evaluation snapshot
+## Earlier blank-only MVP evaluation
 
 The full run used 751 archives and the 219 selected stations.
 Julia produced 310,302 examples from 101,823 labelled departures, in about 60 MiB of Arrow files.
 Of the selected stations, 127 had usable examples and 85 produced models.
 The other stations lacked stable targets, enough training data, or multiple training platforms.
 
-`rfi/evaluation.csv` records the per-station backtest results.
+`rfi/evaluation.csv` records the earlier blank-only per-station backtest results.
 The test period contained 11,298 eligible 30-minute cases across the trained models.
 At an analysis cutoff of 0.8, coverage was 46.7% and agreement with later reports was 97.8%.
 Without that cutoff, top-choice agreement was 70.5%, compared with 71.1% for the historical-frequency baseline.
@@ -138,7 +142,8 @@ Optional fields are `delayMinutes`, `platform`, and `cancelled`.
 Scheduled times are inferred in `Europe/Rome`, as in the Julia preprocessing code.
 Responses include the train ID and clock. They do not depend on row order.
 
-Published platforms, cancellations, buses, and unsupported lead times receive no prediction.
+Cancellations, buses, and unsupported lead times receive no prediction.
+Published official platforms are model inputs, not reasons to skip a train.
 The supported range is 15–130 minutes before scheduled departure.
 Every eligible train receives the full sorted platform distribution, with no server-side score cutoff.
 Scores are not changed or rescaled. The client selects the displayed platforms.
@@ -159,7 +164,9 @@ Alternatively, set `window.ON_VOIE_TOUS_SERVER` before the script starts.
 This work does not deploy a public server.
 
 The adapter requests only compact train fields.
-It displays `Stima` beside blank official platform cells.
+It displays `official | predicted`, as in SNCF.
+A blank official cell contains only the predicted labels.
+The official text stays unchanged and remains before the separator.
 As in SNCF, scores above 0.05 enter the display selection.
 Platforms with scores of at least 0.30 remain separate.
 Consecutive numeric or single-letter labels with lower scores are merged, and their scores are added.

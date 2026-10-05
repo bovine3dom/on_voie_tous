@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         On Voie Tous
 // @namespace    http://tampermonkey.net/
-// @version      0.5
+// @version      0.6
 // @description  Predicts platforms on SNCF and RFI departure boards
 // @author       bovine3dom
 // @match        https://www.garesetconnexions.sncf/*
@@ -258,7 +258,6 @@
 
         window.__onVoieRfiActive = true;
         const clean = text => (text || '').replace(/\s+/g, ' ').trim();
-        const known = text => !['', '-', '--', '—', '?', 'N.D.', 'ND', 'NON DISPONIBILE'].includes(clean(text).toUpperCase());
         const cell = (row, id) => row.querySelector(`[id="${id}"]`);
         const official = element => clean(Array.from(element.childNodes)
             .filter(node => !node.classList?.contains(MARKER)).map(node => node.textContent).join(' '));
@@ -310,28 +309,27 @@
                 catalogAt = Date.now();
             }
             if (!catalog.includes(station)) return;
-            const entries = snapshot().filter(entry => !known(entry.data.platform) && !entry.data.cancelled);
+            const entries = snapshot().filter(entry => !entry.data.cancelled);
             if (!entries.length) return;
             const data = entries.map(entry => entry.data);
             const fingerprint = JSON.stringify(data);
             const result = await request('/predict?operator=rfi', {ts: new Date().toISOString(), station, data});
             if (version !== generation || !result?.predictions) return;
-            const current = snapshot().filter(entry => !known(entry.data.platform) && !entry.data.cancelled);
+            const current = snapshot().filter(entry => !entry.data.cancelled);
             if (JSON.stringify(current.map(entry => entry.data)) !== fingerprint) return;
             const predictions = new Map(result.predictions.map(pred => [pred.trainId + '|' + pred.clock, pred]));
             editBoard(() => {
                 let displayed = false;
                 for (const entry of current) {
-                    if (known(official(entry.platform))) continue;
                     const prediction = predictions.get(entry.data.trainId + '|' + entry.data.clock);
                     if (!prediction?.probabilities) continue;
                     const labels = formatPlatforms(prediction.probabilities);
                     if (!labels) continue;
                     const estimate = document.createElement('span');
                     estimate.className = MARKER;
-                    estimate.textContent = 'Stima: ' + labels;
+                    estimate.textContent = (official(entry.platform) ? ' | ' : '') + labels;
                     estimate.title = 'Stima sperimentale. Probabilità del modello non calibrate. Controlla i monitor e gli annunci RFI.';
-                    estimate.style.cssText = 'display:block;font-size:0.85em;color:#785500;font-style:italic';
+                    estimate.style.cssText = 'font-size:0.85em;color:#785500;font-style:italic';
                     entry.platform.appendChild(estimate);
                     displayed = true;
                 }

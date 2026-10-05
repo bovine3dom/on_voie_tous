@@ -38,33 +38,37 @@ def predictions():
     return {"predictions": [
         {"trainId": "33", "clock": "12:30", "probabilities": [{"platform": "2EST", "prob": 0.9}]},
         {"trainId": "11", "clock": "12:30", "probabilities": [{"platform": "20B", "prob": 0.9}]},
+        {"trainId": "22", "clock": "12:30", "probabilities": [{"platform": "2EST", "prob": 0.9}]},
     ]}
 
 
-def test_estimates_use_identity_and_never_replace_official_platforms(page):
+def test_official_and_predicted_platforms_use_identity_without_feedback(page):
     calls = []
     def respond(route):
         calls.append(route.request.post_data_json)
         route.fulfill(json=predictions())
     page.route("**/predict?operator=rfi", respond)
     page.add_script_tag(path=str(SCRIPT))
-    pw.expect(page.locator(".on-voie-rfi-estimate")).to_have_count(2)
-    assert page.locator('[data-test-id="11"] .on-voie-rfi-estimate').inner_text().startswith("Stima: 20B")
-    assert page.locator('[data-test-id="33"] .on-voie-rfi-estimate').inner_text().startswith("Stima: 2EST")
-    assert page.locator('[data-test-id="22"] [id="RBinario"]').inner_text() == "20B"
-    assert {train["trainId"] for train in calls[0]["data"]} == {"11", "33"}
+    pw.expect(page.locator(".on-voie-rfi-estimate")).to_have_count(3)
+    assert page.locator('[data-test-id="11"] [id="RBinario"]').inner_text() == "20B (90%)"
+    assert page.locator('[data-test-id="33"] [id="RBinario"]').inner_text() == "2EST (90%)"
+    assert page.locator('[data-test-id="22"] [id="RBinario"]').inner_text() == "20B | 2EST (90%)"
+    assert {train["trainId"]: train["platform"] for train in calls[0]["data"]} == {"11": "", "22": "20B", "33": ""}
+    page.locator('[data-test-id="11"] [id="RRitardo"]').evaluate("el => el.textContent = '1'")
+    pw.expect(page.locator(".on-voie-rfi-estimate")).to_have_count(3)
     page.wait_for_timeout(800)
-    assert len(calls) == 1  # Own DOM changes must not cause request loops.
+    assert len(calls) == 2
+    assert [train["platform"] for train in calls[1]["data"]] == ["", "20B", ""]
 
 
 @pytest.mark.parametrize("probabilities,expected", [
-    ([("3", 0.20), ("1", 0.25), ("2", 0.25), ("4", 0.05)], "Stima: 1-3 (70%)"),
-    ([("8", 0.40), ("2", 0.20), ("1", 0.20)], "Stima: 8 (40%), 1-2 (40%)"),
-    ([("C", 0.20), ("A", 0.25), ("B", 0.25)], "Stima: A-C (70%)"),
-    ([("1", 0.06), ("2", 0.06)], "Stima: 1-2 (12%)"),
-    ([("2EST", 0.25), ("3", 0.25)], "Stima: 2EST (25%), 3 (25%)"),
-    ([("20B", 0.25), ("21", 0.25)], "Stima: 20B (25%), 21 (25%)"),
-    ([("1", 0.4), ("2", 0.3), ("3", 0.2)], "Stima: 1 (40%), 2 (30%)"),
+    ([("3", 0.20), ("1", 0.25), ("2", 0.25), ("4", 0.05)], "1-3 (70%)"),
+    ([("8", 0.40), ("2", 0.20), ("1", 0.20)], "8 (40%), 1-2 (40%)"),
+    ([("C", 0.20), ("A", 0.25), ("B", 0.25)], "A-C (70%)"),
+    ([("1", 0.06), ("2", 0.06)], "1-2 (12%)"),
+    ([("2EST", 0.25), ("3", 0.25)], "2EST (25%), 3 (25%)"),
+    ([("20B", 0.25), ("21", 0.25)], "20B (25%), 21 (25%)"),
+    ([("1", 0.4), ("2", 0.3), ("3", 0.2)], "1 (40%), 2 (30%)"),
 ])
 def test_client_merges_low_score_neighbours_before_display_filter(page, probabilities, expected):
     page.route("**/predict?operator=rfi", lambda route: route.fulfill(json={"predictions": [{
@@ -77,16 +81,22 @@ def test_client_merges_low_score_neighbours_before_display_filter(page, probabil
     assert page.locator('[data-test-id="22"] [id="RBinario"]').inner_text() == "20B"
 
 
-def test_an_official_update_discards_an_inflight_prediction(page):
+def test_an_official_update_discards_stale_scores_and_requests_new_ones(page):
+    calls = []
     def respond(route):
-        page.locator('[data-test-id="11"] [id="RBinario"]').evaluate("el => el.textContent = '9'")
-        page.locator('[data-test-id="33"] [id="RBinario"]').evaluate("el => el.textContent = '10'")
-        route.fulfill(json=predictions())
+        calls.append(route.request.post_data_json)
+        if len(calls) == 1:
+            page.locator('[data-test-id="11"] [id="RBinario"]').evaluate("el => el.textContent = '9'")
+            route.fulfill(json={"predictions": [{
+                "trainId": "11", "clock": "12:30", "probabilities": [{"platform": "STALE", "prob": 1}]}]})
+        else:
+            route.fulfill(json=predictions())
     page.route("**/predict?operator=rfi", respond)
     page.add_script_tag(path=str(SCRIPT))
-    pw.expect(page.locator('[data-test-id="11"] [id="RBinario"]')).to_have_text("9")
-    page.wait_for_timeout(800)
-    assert page.locator(".on-voie-rfi-estimate").count() == 0
+    pw.expect(page.locator('[data-test-id="11"] [id="RBinario"]')).to_have_text("9 | 20B (90%)")
+    assert len(calls) == 2
+    assert calls[1]["data"][0]["platform"] == "9"
+    assert "STALE" not in page.locator("body").inner_text()
 
 
 def test_a_failed_server_leaves_the_board_unchanged(page):
@@ -108,7 +118,7 @@ def test_document_start_and_duplicate_injection_keep_native_fetch(page):
         + SCRIPT.read_text())
     page.goto(URL)
     page.add_script_tag(path=str(SCRIPT))
-    pw.expect(page.locator(".on-voie-rfi-estimate")).to_have_count(2)
+    pw.expect(page.locator(".on-voie-rfi-estimate")).to_have_count(3)
     assert page.evaluate("window.startedWithoutBody && window.nativeFetch === window.fetch")
     page.wait_for_timeout(800)
     assert len(calls) == 1

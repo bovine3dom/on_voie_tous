@@ -3,8 +3,8 @@ from zoneinfo import ZoneInfo
 
 import polars as pl
 
-SCHEMA_VERSION = 1
-CAT_COLS = ["trainNumber", "predictedDestination", "carrier", "trainType"]
+SCHEMA_VERSION = 2
+CAT_COLS = ["predictedPlatform", "trainNumber", "predictedDestination", "carrier", "trainType"]
 FEATURES = CAT_COLS + [
     "delayMinutes", "scheduledMinute", "dayOfWeek", "month", "leadMinutes"
 ]
@@ -29,6 +29,7 @@ def platform_known(value: str) -> bool:
 def live_features(at: datetime, train) -> dict:
     local = scheduled_time(at, train.clock)
     return {
+        "predictedPlatform": train.platform.strip() if platform_known(train.platform) else "MISSING",
         "trainNumber": train.trainNumber,
         "predictedDestination": train.destination,
         "carrier": train.carrier,

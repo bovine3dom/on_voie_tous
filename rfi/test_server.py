@@ -51,12 +51,28 @@ def test_identity_string_labels_and_features(payload, url):
 
 
 @pytest.mark.parametrize("change", [
-    {"platform": "20B"}, {"cancelled": True}, {"category": "AUTOBUS"},
+    {"cancelled": True}, {"category": "AUTOBUS"},
     {"clock": "16:00"}, {"clock": "12:05"}])
-def test_official_and_out_of_scope_rows_are_not_predicted(payload, change, monkeypatch):
+def test_out_of_scope_rows_are_not_predicted(payload, change, monkeypatch):
     payload["data"][0].update(change)
     monkeypatch.setattr(server, "get_model", lambda *args: pytest.fail("Unneeded model load"))
     assert CLIENT.post("/rfi/predict", json=payload).json() == {"predictions": []}
+
+
+@pytest.mark.parametrize("platform,expected", [("20B", "20B"), (" 2EST ", "2EST"), ("--", "MISSING")])
+def test_current_official_platform_is_a_categorical_input(payload, monkeypatch, platform, expected):
+    seen = []
+    class Model:
+        feature_names_ = FEATURES
+        classes_ = ["2EST", "20B"]
+
+        def predict_proba(self, df):
+            seen.append(df["predictedPlatform"].to_list())
+            return np.tile([0.9, 0.1], (df.height, 1))
+    monkeypatch.setattr(server, "get_model", lambda *args: Model())
+    payload["data"][0]["platform"] = platform
+    assert CLIENT.post("/predict?operator=rfi", json=payload).json()["predictions"]
+    assert seen == [[expected]]
 
 
 def test_all_platforms_are_returned_even_below_the_old_cutoff(payload, monkeypatch):

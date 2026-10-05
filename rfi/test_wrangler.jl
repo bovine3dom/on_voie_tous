@@ -23,7 +23,7 @@ end
 late(platform="2EST") = board(at="2026-04-01T10:25:00Z"; platform)
 latest(platform="2EST") = board(at="2026-04-01T10:30:00Z"; platform)
 
-@testset "Missing-platform features and stable later targets" begin
+@testset "Current official platforms and stable later targets" begin
     runs = parsed(board(), late(), latest())
     rows = training_rows(runs)["1728"]
     @test length(rows) == 1
@@ -34,7 +34,10 @@ latest(platform="2EST") = board(at="2026-04-01T10:30:00Z"; platform)
     @test rows[1].month == 4
     @test rows[1].horizon == 30
     @test rows[1].timestamp < rows[1].labelTimestamp
-    @test isempty(training_rows(parsed(board(platform="20B"), late(), latest())))
+    @test rows[1].predictedPlatform == "MISSING"
+    revised = training_rows(parsed(board(platform="20B"), late(), latest()))["1728"]
+    @test revised[1].predictedPlatform == "20B"
+    @test revised[1].actualPlatform == "2EST"
     @test isempty(training_rows(parsed(board(), latest())))
     @test isempty(training_rows(parsed(board(), late("1"), latest("2"))))
     @test isempty(training_rows(parsed(board(), latest(), latest())))
