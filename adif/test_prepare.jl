@@ -48,6 +48,9 @@ latest(value="2EST"; kwargs...) = board(at="2026-04-01T10:30:00Z", platform=valu
     end
     encoded = parsed(quoted(board(platform="20B")), quoted(late()), quoted(latest()))
     @test ADIF.rows(encoded, Set(["51003"])) == ADIF.rows(scan, Set(["51003"]))
+    prefixed = [replace(line, "\"station\":\"es-adif\"" => "\"station\":\"$prefix-51003\"")
+                for (line, prefix) in zip((board(platform="20B"), late(), latest()), ("PRE-ECM", "PRO-ECM", "ECM"))]
+    @test ADIF.rows(parsed(prefixed...), Set(["51003"])) == ADIF.rows(scan, Set(["51003"]))
 end
 
 @testset "Distinct source updates, cancellation, and invalid observations" begin

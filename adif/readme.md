@@ -34,8 +34,10 @@ Either the full period or a supported month can meet these thresholds, as in RFI
 Stations with platforms consistently published are skipped.
 Platform revisions are reported, but do not select a station for modelling.
 
-`adif/minimum_departures.json`, if present, sets station-specific minimums.
-Use `--minimums=PATH` for another file. Overrides take priority over `--min`.
+`adif/minimum_departures.json` sets the minimum to five for 498 stations from the first audit.
+These stations were unresolved and had 1–99 eligible departures at 30 minutes.
+Other stations retain the default minimum. Use `--minimums=PATH` for another file.
+Overrides take priority over `--min`.
 The options `--min`, `--rate`, and `--lead` change the selection.
 
 ## Source and targets
@@ -43,6 +45,7 @@ The options `--min`, `--rate`, and `--lead` change the selection.
 SignalR `ReceiveMessage` arguments contain JSON text, sometimes with a second JSON encoding.
 Empty messages and control replies are not empty station boards.
 The station ID comes from `station_settings.code`, not the outer archive label.
+The `PRE-ECM-`, `PRO-ECM-`, and `ECM-` subscription prefixes do not split station history.
 Only origin and intermediate stops are departures. Destination stops are arrivals and are excluded.
 Cancelled trains and buses are excluded.
 Boards with missing timestamps or source data more than ten minutes old are excluded.
@@ -86,7 +89,7 @@ It also records a historical-frequency baseline and agreement with the early off
 Raw CatBoost scores are not calibrated probabilities of the physical platform.
 Models need at least 50 training departures, three service dates, and multiple training platforms.
 
-## Results: 5 October 2026
+## Initial results: 5 October 2026
 
 The run read 75 archives, with 661 stations in the feed.
 Only four service dates had usable departure observations: 7–8 July and 4–5 October 2026.
