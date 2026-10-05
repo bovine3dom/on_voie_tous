@@ -27,7 +27,7 @@ def page():
         page = browser.new_page()
         page.route("**/Monitor?**", lambda route: route.fulfill(
             content_type="text/html", body="<html><body><table>"+row("11")+row("22", "20B")+row("33")+"</table></body></html>"))
-        page.route("**/rfi/stations", lambda route: route.fulfill(
+        page.route("**/stations?operator=rfi", lambda route: route.fulfill(
             json={"stations": ["1728"], "leadMinutes": [15, 130]}))
         page.goto(URL)
         yield page
@@ -99,6 +99,37 @@ def test_an_official_update_discards_stale_scores_and_requests_new_ones(page):
     assert "STALE" not in page.locator("body").inner_text()
 
 
+def test_clock_updates_and_identical_redraws_reuse_predictions_without_polling(page):
+    calls, catalogs = [], []
+    def respond(route):
+        calls.append(route.request.post_data_json)
+        route.fulfill(json=predictions())
+    def catalog(route):
+        catalogs.append(route.request.url)
+        route.fulfill(json={"stations": ["1728"]})
+    page.route("**/predict?operator=rfi", respond)
+    page.route("**/stations?operator=rfi", catalog)
+    page.evaluate("""() => {
+        window.pollIntervals = [];
+        const original = window.setInterval;
+        window.setInterval = (...args) => {
+            if (args[1] != null) window.pollIntervals.push(args[1]);
+            return original(...args);
+        };
+    }""")
+    page.add_script_tag(path=str(SCRIPT))
+    pw.expect(page.locator(".on-voie-rfi-estimate")).to_have_count(3)
+    page.evaluate("document.body.appendChild(document.createElement('div')).textContent = 'Clock update'")
+    page.wait_for_timeout(700)
+    assert len(calls) == len(catalogs) == 1
+    page.locator("table").evaluate("(table, html) => table.innerHTML = html", row("33") + row("22", "20B") + row("11"))
+    pw.expect(page.locator(".on-voie-rfi-estimate")).to_have_count(3)
+    assert page.locator('[data-test-id="22"] [id="RBinario"]').inner_text() == "20B | 2EST (90%)"
+    page.wait_for_timeout(700)
+    assert len(calls) == len(catalogs) == 1
+    assert page.evaluate("window.pollIntervals") == []
+
+
 def test_a_failed_server_leaves_the_board_unchanged(page):
     page.route("**/predict?operator=rfi", lambda route: route.fulfill(status=503))
     page.add_script_tag(path=str(SCRIPT))
@@ -140,7 +171,7 @@ def test_sncf_uses_the_default_api_and_preserves_existing_display(page, wrapped,
     page.route("https://www.garesetconnexions.sncf/**", lambda route: route.fulfill(
         content_type="text/html", body="<html><body></body></html>"))
     page.route("**/schedule-table/test", lambda route: route.fulfill(json=payload))
-    page.route("**/rfi/stations", lambda route: rfi_calls.append(route.request.url) or route.abort())
+    page.route("**/stations?operator=rfi", lambda route: rfi_calls.append(route.request.url) or route.abort())
     def respond(route):
         calls.append(route.request.post_data_json)
         route.fulfill(status=status, json={"predictions": [
@@ -163,7 +194,7 @@ def test_sncf_uses_the_default_api_and_preserves_existing_display(page, wrapped,
 
 def test_arrivals_are_not_modified(page):
     calls = []
-    page.route("**/rfi/stations", lambda route: calls.append(route.request.url) or route.abort())
+    page.route("**/stations?operator=rfi", lambda route: calls.append(route.request.url) or route.abort())
     page.goto(URL.replace("False", "True"))
     page.add_script_tag(path=str(SCRIPT))
     page.wait_for_timeout(700)

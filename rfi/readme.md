@@ -131,10 +131,14 @@ Use `/predict?operator=rfi` for RFI and `/predict?operator=sncf` for SNCF.
 If `operator` is absent, the endpoint selects SNCF.
 The `/rfi/predict` route remains an RFI alias.
 RFI uses separate models and the shared model loader and response schema.
-The `/rfi/stations` route lists available models.
+`GET /stations?operator=rfi` lists available models.
+The `/rfi/stations` route remains an alias.
 Set `RFI_MODELS_DIR` to change the RFI model directory.
 Restart the server after training to clear its model cache.
 `PREDICT_HOST` and `PREDICT_PORT` retain their SNCF meanings.
+The existing `uv run predict.py` command in `predict/` remains compatible.
+Both commands start the same shared app and register the operator routes.
+Restart an existing service after you update the code.
 
 RFI inputs contain a UTC collection timestamp, a station ID, and compact train fields.
 Train fields include `trainId`, `trainNumber`, `clock`, `destination`, `carrier`, and `category`.
@@ -173,7 +177,10 @@ Consecutive numeric or single-letter labels with lower scores are merged, and th
 Compound labels such as `2EST` and `20B` remain separate.
 The client displays at most two platforms or ranges with scores of at least 0.10.
 It leaves official platforms unchanged and rejects stale responses.
-Server failures leave the board unchanged.
+Requests occur only when the train inputs change, not when the page clock changes.
+Identical board redraws reuse cached predictions. There is no periodic API polling.
+The model catalog is cached for the page session.
+Server failures leave the board unchanged. Retry after a train update or reload the page.
 Model scores are not calibrated probabilities of the physical platform.
 
 Run the browser tests in headless Chromium:

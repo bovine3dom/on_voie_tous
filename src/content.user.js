@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         On Voie Tous
 // @namespace    http://tampermonkey.net/
-// @version      0.6
+// @version      0.8
 // @description  Predicts platforms on SNCF and RFI departure boards
 // @author       bovine3dom
 // @match        https://www.garesetconnexions.sncf/*
@@ -283,7 +283,9 @@
         }
 
         let catalog = null;
-        let catalogAt = 0;
+        let catalogRequest = null;
+        let fingerprint = null;
+        let predictions = new Map();
         let generation = 0;
         let timer;
         const observer = new MutationObserver(schedule);
@@ -299,38 +301,27 @@
             document.querySelectorAll('.' + MARKER).forEach(element => element.remove());
         }
 
-        async function refresh(version) {
-            editBoard(clearEstimates);
-            if (!catalog || Date.now() - catalogAt > 300000) {
-                const result = await request('/rfi/stations');
-                if (version !== generation) return;
-                if (!result?.stations) return;
-                catalog = result.stations;
-                catalogAt = Date.now();
-            }
-            if (!catalog.includes(station)) return;
-            const entries = snapshot().filter(entry => !entry.data.cancelled);
-            if (!entries.length) return;
-            const data = entries.map(entry => entry.data);
-            const fingerprint = JSON.stringify(data);
-            const result = await request('/predict?operator=rfi', {ts: new Date().toISOString(), station, data});
-            if (version !== generation || !result?.predictions) return;
-            const current = snapshot().filter(entry => !entry.data.cancelled);
-            if (JSON.stringify(current.map(entry => entry.data)) !== fingerprint) return;
-            const predictions = new Map(result.predictions.map(pred => [pred.trainId + '|' + pred.clock, pred]));
+        const fingerprintOf = entries => JSON.stringify(entries.map(entry => entry.data)
+            .sort((a, b) => (a.trainId + '|' + a.clock).localeCompare(b.trainId + '|' + b.clock)));
+
+        function render(entries) {
             editBoard(() => {
                 let displayed = false;
-                for (const entry of current) {
+                for (const entry of entries) {
                     const prediction = predictions.get(entry.data.trainId + '|' + entry.data.clock);
                     if (!prediction?.probabilities) continue;
                     const labels = formatPlatforms(prediction.probabilities);
                     if (!labels) continue;
-                    const estimate = document.createElement('span');
-                    estimate.className = MARKER;
-                    estimate.textContent = (official(entry.platform) ? ' | ' : '') + labels;
-                    estimate.title = 'Stima sperimentale. Probabilità del modello non calibrate. Controlla i monitor e gli annunci RFI.';
-                    estimate.style.cssText = 'font-size:0.85em;color:#785500;font-style:italic';
-                    entry.platform.appendChild(estimate);
+                    let estimate = entry.platform.querySelector('.' + MARKER);
+                    if (!estimate) {
+                        estimate = document.createElement('span');
+                        estimate.className = MARKER;
+                        estimate.title = 'Stima sperimentale. Probabilità del modello non calibrate. Controlla i monitor e gli annunci RFI.';
+                        estimate.style.cssText = 'font-size:0.85em;color:#785500;font-style:italic';
+                        entry.platform.appendChild(estimate);
+                    }
+                    const text = (official(entry.platform) ? ' | ' : '') + labels;
+                    if (estimate.textContent !== text) estimate.textContent = text;
                     displayed = true;
                 }
                 if (displayed && !document.getElementById('on-voie-rfi-banner')) {
@@ -343,17 +334,47 @@
             });
         }
 
+        async function refresh() {
+            const entries = snapshot().filter(entry => !entry.data.cancelled);
+            const currentFingerprint = fingerprintOf(entries);
+            if (currentFingerprint === fingerprint) {
+                render(entries);
+                return;
+            }
+            fingerprint = currentFingerprint;
+            predictions = new Map();
+            const version = ++generation;
+            editBoard(clearEstimates);
+            if (!entries.length) return;
+            if (!catalog) {
+                catalogRequest ||= request('/stations?operator=rfi');
+                const result = await catalogRequest;
+                catalogRequest = null;
+                if (Array.isArray(result?.stations)) catalog = result.stations;
+            }
+            if (version !== generation || !catalog?.includes(station)) return;
+            if (fingerprintOf(snapshot().filter(entry => !entry.data.cancelled)) !== currentFingerprint) return;
+            const result = await request('/predict?operator=rfi', {
+                ts: new Date().toISOString(), station, data: entries.map(entry => entry.data),
+            });
+            if (version !== generation || !result?.predictions) return;
+            const current = snapshot().filter(entry => !entry.data.cancelled);
+            if (fingerprintOf(current) !== currentFingerprint) return;
+            predictions = new Map(result.predictions.map(pred => [pred.trainId + '|' + pred.clock, pred]));
+            render(current);
+        }
+
         function schedule() {
-            generation += 1;
-            const version = generation;
-            clearTimeout(timer);
-            timer = setTimeout(() => refresh(version), 300);
+            if (timer) return;
+            timer = setTimeout(() => {
+                timer = null;
+                refresh();
+            }, 300);
         }
 
         function start() {
             observer.observe(document.body, {childList: true, subtree: true, characterData: true});
             schedule();
-            setInterval(schedule, 30000);
         }
         if (document.body) start();
         else document.addEventListener('DOMContentLoaded', start, {once: true});
