@@ -300,7 +300,7 @@ function rows(scan, selected)
     result
 end
 
-function reports(scan, files, output, lead, minimum, rate, revision_rate, minimum_revisions, elapsed, hits; minimums=Dict{String,Int}())
+function reports(scan, files, output, lead, minimum, rate, elapsed, hits; minimums=Dict{String,Int}())
     mkpath(output)
     filter!(scan.availability.runs) do (key, _)
         state = scan.runs[key]
@@ -317,16 +317,8 @@ function reports(scan, files, output, lead, minimum, rate, revision_rate, minimu
         station_minimum = get(minimums, id, minimum)
         label, basis = Availability.classify(periods, index, station_minimum, rate)
         reason = label == "needs_predictions" ? "missing_platforms" : ""
-        periods_later = [(p, n) for ((s, p), n) in later if s == id]
-        supported = [(p, n) for (p, n) in periods_later if n[2] >= station_minimum]
-        changed_enough(n) = n[3] >= minimum_revisions && n[3]/n[2] >= revision_rate
-        revised = [(p, n) for (p, n) in supported if changed_enough(n)]
-        concerning = any(n[2] < station_minimum && changed_enough(n) for (_, n) in periods_later)
-        if !isempty(revised)
-            basis = first(argmax(x -> x[2][3]/x[2][2], revised))
-            label, reason = "needs_predictions", "platform_revisions"
-        elseif label == "skip" && (isempty(supported) || concerning || station.unparsed > station.rows/100)
-            label, basis, reason = "insufficient_data", "", "insufficient_later_reports_or_parsing"
+        if label == "skip" && station.unparsed > station.rows/100
+            label, basis, reason = "insufficient_data", "", "parsing_failures"
         end
         push!(lists[label], id)
         n, m = get(totals, (id, "all"), (zeros(Int, 4), zeros(Int, 4)))
@@ -352,8 +344,8 @@ function reports(scan, files, output, lead, minimum, rate, revision_rate, minimu
         end
     end
     metadata = (; operator="adif", parser_version=PARSER_VERSION, lead_minutes=lead, tolerance_minutes=Training.TOLERANCE,
-                 minimum_departures=minimum, minimum_overrides=minimums, missing_rate_threshold=rate, revision_rate_threshold=revision_rate,
-                 minimum_revisions, max_source_age_seconds=600, archives=length(files), compressed_bytes=sum(filesize, files),
+                 minimum_departures=minimum, minimum_overrides=minimums, missing_rate_threshold=rate,
+                 max_source_age_seconds=600, archives=length(files), compressed_bytes=sum(filesize, files),
                  first_observation=isempty(scan.availability.stations) ? nothing : Availability.minimum_datetime(scan.availability),
                  last_observation=isempty(scan.availability.stations) ? nothing : Availability.maximum_datetime(scan.availability),
                  elapsed_seconds=round(elapsed; digits=2), cached_archives=hits,
@@ -367,19 +359,17 @@ function reports(scan, files, output, lead, minimum, rate, revision_rate, minimu
 end
 
 function prepare(args=ARGS)
-    isempty(args) && error("Usage: prepare.jl ARCHIVE_DIRECTORY [--min=100] [--minimums=PATH] [--rate=0.1] [--revision-rate=0.01] [--min-revisions=5] [--lead=30] [--output=PATH] [--limit=N]")
+    isempty(args) && error("Usage: prepare.jl ARCHIVE_DIRECTORY [--min=100] [--minimums=PATH] [--rate=0.1] [--lead=30] [--output=PATH] [--limit=N]")
     options = Dict{String,String}()
     for argument in args[2:end]
         key, value = split(argument, '='; limit=2)
-        key in ("--min", "--minimums", "--rate", "--revision-rate", "--min-revisions", "--lead", "--output", "--limit") || error("Unknown option: $key")
+        key in ("--min", "--minimums", "--rate", "--lead", "--output", "--limit") || error("Unknown option: $key")
         options[key] = value
     end
     minimum = parse(Int, get(options, "--min", "100"))
     rate = parse(Float64, get(options, "--rate", "0.1"))
-    revision_rate = parse(Float64, get(options, "--revision-rate", "0.01"))
-    minimum_revisions = parse(Int, get(options, "--min-revisions", "5"))
     lead = parse(Int, get(options, "--lead", "30"))
-    minimum > 0 && minimum_revisions > 0 && 0 < rate <= 1 && 0 < revision_rate <= 1 && lead in HORIZONS || error("Invalid selection thresholds")
+    minimum > 0 && 0 < rate <= 1 && lead in HORIZONS || error("Invalid selection thresholds")
     minimums_path = get(options, "--minimums", joinpath(@__DIR__, "minimum_departures.json"))
     haskey(options, "--minimums") && !isfile(minimums_path) && error("Override file does not exist")
     minimums = isfile(minimums_path) ? JSON3.read(read(minimums_path, String), Dict{String,Int}) : Dict{String,Int}()
@@ -411,8 +401,7 @@ function prepare(args=ARGS)
     end
     scan = Scan()
     foreach(chunk -> merge!(scan, chunk), chunks)
-    selected = reports(scan, files, joinpath(output, "results"), lead, minimum, rate, revision_rate, minimum_revisions,
-                       time()-started, hits[]; minimums)
+    selected = reports(scan, files, joinpath(output, "results"), lead, minimum, rate, time()-started, hits[]; minimums)
     station_rows = rows(scan, selected)
     hive = joinpath(output, "hive")
     mkpath(hive)

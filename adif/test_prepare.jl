@@ -109,18 +109,23 @@ end
         second, cached = ADIF.scan_file(path, cache)
         @test cached
         @test ADIF.rows(first, Set(["51003"])) == ADIF.rows(second, Set(["51003"]))
-        selected = ADIF.reports(first, [path], joinpath(directory, "results"), 30, 1, 0.1, 0.01, 1, 0.0, 0)
+        selected = ADIF.reports(first, [path], joinpath(directory, "results"), 30, 1, 0.1, 0.0, 0)
+        @test isempty(selected) # Always published, even when later changed.
+        @test read(joinpath(directory, "results", "skip.txt"), String) == "51003\n"
+        @test ADIF.revisions(first, 30)[("51003", "all")] == [1, 1, 1]
+        missing = parsed(board(), late(), latest())
+        selected = ADIF.reports(missing, [path], joinpath(directory, "missing"), 30, 1, 0.1, 0.0, 0)
         @test selected == Set(["51003"])
         for excluded in (parsed(board(), late(), latest("BUS")), parsed(board(), late(), latest(status="cancelled")))
-            ADIF.reports(excluded, [path], joinpath(directory, "excluded"), 30, 1, 0.1, 0.01, 1, 0.0, 0)
+            ADIF.reports(excluded, [path], joinpath(directory, "excluded"), 30, 1, 0.1, 0.0, 0)
             @test isempty(excluded.availability.runs)
         end
-        @test ADIF.reports(first, [path], joinpath(directory, "overrides"), 30, 100, 0.1, 0.01, 1,
+        @test ADIF.reports(missing, [path], joinpath(directory, "overrides"), 30, 100, 0.1,
                            0.0, 0; minimums=Dict("51003"=>1)) == selected
         control = parsed(JSON3.write((ts="2026-04-01T10:00:00Z", station="es-adif",
                                     data=(type=1, target="ReceiveMessage", arguments=[nothing]))))
         @test control.statistics["empty_payloads"] == 1
-        @test isempty(ADIF.reports(control, [path], joinpath(directory, "empty"), 30, 100, 0.1, 0.01, 5, 0.0, 0))
+        @test isempty(ADIF.reports(control, [path], joinpath(directory, "empty"), 30, 100, 0.1, 0.0, 0))
         arrow = joinpath(directory, "part0.arrow")
         Arrow.write(arrow, ADIF.rows(first, selected)["51003"]; file=true)
         @test collect(Arrow.Table(arrow).predictedPlatform) == ["20B", "2EST"]

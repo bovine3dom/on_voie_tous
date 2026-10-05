@@ -28,19 +28,15 @@ The closest snapshot before that target is used, up to 10 minutes earlier.
 Counts at 15, 30, 60, and 120 minutes are also saved.
 Repeated messages do not increase the departure count.
 
-A station needs predictions if either condition has sufficient support:
-
-- At least 10% of observed departure platforms are blank.
-- At least 1% of early published platforms differ from the later stable report, with at least five such changes.
-
+A station needs predictions if at least 10% of observed departure platforms are blank.
 The default minimum is 100 distinct departures.
-For the revision test, the denominator contains published platforms with stable later reports.
-Either the full period or a supported month can meet a condition.
-A station cannot be a confirmed skip without sufficient later reports to check revisions.
+Either the full period or a supported month can meet these thresholds, as in RFI.
+Stations with platforms consistently published are skipped.
+Platform revisions are reported, but do not select a station for modelling.
 
 `adif/minimum_departures.json`, if present, sets station-specific minimums.
 Use `--minimums=PATH` for another file. Overrides take priority over `--min`.
-The options `--rate`, `--revision-rate`, `--min-revisions`, and `--lead` change the selection.
+The options `--min`, `--rate`, and `--lead` change the selection.
 
 ## Source and targets
 
