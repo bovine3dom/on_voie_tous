@@ -21,10 +21,13 @@ uv run --project predict python -m rfi.train --workers=4 --threads=4 --refit
 Training data goes to `rfi/hive/`; models and `report.json` go to `rfi/models/`.
 Use `--stations 1728 2416` to train selected stations.
 `--refit` trains on all data after evaluation.
+Every selected station with labelled departures receives a predictor.
+Single-platform or constant-input histories use `.prior.json` frequency predictors instead of CatBoost models.
 
 Models predict the last stable platform reported near departure.
 `report.json` compares the model with a historical-frequency baseline.
 It has separate results for blank, published, and changed platforms.
+Training still runs if a chronological evaluation is unavailable; no accuracy estimate is recorded.
 
 ## Run the server
 

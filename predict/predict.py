@@ -17,6 +17,8 @@ if __name__ == "__main__":
     uvicorn.run(app, host=HOST, port=PORT, access_log=False)
     raise SystemExit
 
+from .board_models import PlatformPrior
+
 app = FastAPI()
 
 app.add_middleware(
@@ -27,7 +29,7 @@ app.add_middleware(
 )
 
 MODELS_DIR = os.getenv("SNCF_MODELS_DIR", os.path.join(os.path.dirname(__file__), "models"))
-_model_cache: dict[tuple[str, str], CatBoostClassifier] = {}
+_model_cache: dict[tuple[str, str], CatBoostClassifier | PlatformPrior] = {}
 
 CATEGORICAL_COLS = [
     "station",
@@ -48,7 +50,7 @@ CATEGORICAL_COLS = [
 UNKNOWN_PLATFORM = "???"
 
 
-def get_model(station_id: str, models_dir=None) -> CatBoostClassifier:
+def get_model(station_id: str, models_dir=None) -> CatBoostClassifier | PlatformPrior:
     if not station_id.isascii() or not station_id.isdecimal():
         raise HTTPException(status_code=400, detail="Invalid station ID")
     directory = os.path.abspath(MODELS_DIR if models_dir is None else models_dir)
@@ -57,13 +59,14 @@ def get_model(station_id: str, models_dir=None) -> CatBoostClassifier:
         return _model_cache[key]
 
     model_path = os.path.join(directory, f"{station_id}.cbm")
-    if not os.path.exists(model_path):
-        raise HTTPException(
-            status_code=404, detail=f"No model found for station {station_id}"
-        )
-
-    model = CatBoostClassifier()
-    model.load_model(model_path)
+    prior_path = os.path.join(directory, f"{station_id}.prior.json")
+    if os.path.exists(model_path):
+        model = CatBoostClassifier()
+        model.load_model(model_path)
+    elif models_dir is not None and os.path.exists(prior_path):
+        model = PlatformPrior.load_model(prior_path)
+    else:
+        raise HTTPException(status_code=404, detail=f"No model found for station {station_id}")
     _model_cache[key] = model
     return model
 

@@ -7,6 +7,7 @@ import uvicorn
 
 from predict.predict import app, get_model, HOST, PORT, TrainPrediction
 from predict.board_api import board_predictions
+from predict.board_models import station_models
 from .features import live_features
 
 MODELS_DIR = Path(os.getenv("RFI_MODELS_DIR", Path(__file__).resolve().parent / "models"))
@@ -41,7 +42,7 @@ class Output(BaseModel):
 
 @app.get("/rfi/stations")
 def available_stations():
-    return {"stations": sorted(path.stem for path in MODELS_DIR.glob("*.cbm") if path.stem.isdecimal())}
+    return {"stations": station_models(MODELS_DIR)}
 
 
 @app.post("/rfi/predict", response_model=Output)

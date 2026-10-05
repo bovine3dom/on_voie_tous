@@ -7,6 +7,7 @@ from pydantic import AwareDatetime, BaseModel, Field
 
 from predict.predict import app, get_model, PredictionOutput
 from predict.board_api import board_predictions
+from predict.board_models import station_models
 from .features import live_features
 
 MODELS_DIR = Path(os.getenv("ADIF_MODELS_DIR", Path(__file__).resolve().parent / "models"))
@@ -35,7 +36,7 @@ class Input(BaseModel):
 
 @app.get("/adif/stations")
 def available_stations():
-    return {"stations": sorted(path.stem for path in MODELS_DIR.glob("*.cbm") if path.stem.isdecimal())}
+    return {"stations": station_models(MODELS_DIR)}
 
 
 @app.post("/adif/predict", response_model=PredictionOutput, response_model_exclude_none=True)

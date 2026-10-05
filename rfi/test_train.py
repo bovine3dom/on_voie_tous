@@ -3,11 +3,14 @@ from pathlib import Path
 import subprocess
 import sys
 
+import numpy as np
 import polars as pl
+import pytest
 from catboost import CatBoostClassifier
 
 from rfi.features import FEATURES, SCHEMA_VERSION, feature_frame
 from rfi.train import chronological_split, train_station
+from predict.board_models import PlatformPrior
 
 
 def data(days=12):
@@ -39,7 +42,7 @@ def test_split_keeps_departures_and_dates_together():
 
 
 def test_training_and_string_platform_round_trip(tmp_path):
-    report = train_station("1728", data(), tmp_path, iterations=30, threads=1, minimum=10)
+    report = train_station("1728", data(), tmp_path, iterations=30, threads=1)
     assert report["status"] == "trained"
     assert set(report["classes"]) == {"2EST", "20B"}
     assert report["test"]["accuracy"] == 1
@@ -58,7 +61,7 @@ def test_unknown_test_platform_is_counted_as_wrong(tmp_path):
     df = data().with_columns(pl.when(pl.col("serviceDate") >= "2026-04-11")
                             .then(pl.lit("NEW")).otherwise(pl.col("actualPlatform"))
                             .alias("actualPlatform"))
-    report = train_station("1728", df, tmp_path, iterations=10, threads=1, minimum=10)
+    report = train_station("1728", df, tmp_path, iterations=10, threads=1)
     assert report["test"]["accuracy"] == 0
     assert report["test"]["unseen_platforms"] == report["test"]["departures"]
 
@@ -67,7 +70,7 @@ def test_refit_preserves_backtest_and_learns_later_platforms(tmp_path):
     df = data().with_columns(pl.when(pl.col("serviceDate") >= "2026-04-11")
                             .then(pl.lit("NEW")).otherwise(pl.col("actualPlatform"))
                             .alias("actualPlatform"))
-    report = train_station("1728", df, tmp_path, iterations=10, threads=1, minimum=10, refit=True)
+    report = train_station("1728", df, tmp_path, iterations=10, threads=1, refit=True)
     assert report["test"]["accuracy"] == 0
     assert report["refitted"]
     assert report["model_last_date"] == "2026-04-12"
@@ -75,12 +78,73 @@ def test_refit_preserves_backtest_and_learns_later_platforms(tmp_path):
     assert "NEW" in report["model_classes"]
 
 
-def test_single_platform_and_small_training_sets_are_not_saved(tmp_path):
-    report = train_station("1", data().with_columns(pl.lit("20B").alias("actualPlatform")),
-                           tmp_path, minimum=10)
-    assert report["status"] == "single_platform"
+@pytest.mark.parametrize("days", [1, 2])
+def test_short_histories_train_without_a_backtest(tmp_path, days):
+    report = train_station("1", data(days), tmp_path, iterations=5, threads=1)
+    assert report["status"] == "trained"
+    assert report["model_kind"] == "catboost"
+    assert report["backtest_status"] == "unavailable"
+    assert "test" not in report
+    assert report["model_departures"] == 10 * days
+    assert (tmp_path / "1.cbm").exists()
+
+
+def test_small_training_periods_are_evaluated_not_rejected(tmp_path):
+    report = train_station("1", data(3), tmp_path, iterations=5, threads=1)
+    assert report["status"] == "trained"
+    assert report["backtest_status"] == "available"
+    assert report["split_departures"]["train"] == 10
+
+
+@pytest.mark.parametrize("df", [data().head(1), data().with_columns(pl.lit("20B").alias("actualPlatform"))])
+def test_one_platform_is_saved_without_an_invented_second_platform(tmp_path, df):
+    report = train_station("1", df, tmp_path, iterations=5, threads=1)
+    assert report["status"] == "trained"
+    assert report["model_kind"] == "platform_prior"
     assert not (tmp_path / "1.cbm").exists()
-    assert train_station("1", data(), tmp_path, minimum=1000)["status"] == "insufficient_training_data"
+    model = PlatformPrior.load_model(tmp_path / "1.prior.json")
+    assert list(model.classes_) == ["20B"]
+    assert list(model.feature_names_) == FEATURES
+    assert np.all(model.predict_proba(feature_frame(df)) == 1)
+
+
+def test_constant_inputs_use_weighted_platform_frequencies(tmp_path):
+    df = pl.concat([data().head(1)] * 3).with_columns(
+        pl.Series("departureId", ["a", "b", "c"]), pl.Series("actualPlatform", ["20B", "20B", "2EST"]),
+        pl.Series("weight", [0.5, 0.5, 1.0]))
+    report = train_station("1", df, tmp_path, iterations=5, threads=1)
+    assert report["model_kind"] == "platform_prior"
+    model = PlatformPrior.load_model(tmp_path / "1.prior.json")
+    assert dict(zip(model.classes_, model.probabilities)) == {"20B": 0.5, "2EST": 0.5}
+
+
+def test_refit_learns_classes_missing_from_the_initial_single_platform_period(tmp_path):
+    df = data(3).with_columns(pl.when(pl.col("serviceDate") == "2026-04-01")
+                            .then(pl.lit("20B")).otherwise(pl.lit("2EST")).alias("actualPlatform"))
+    report = train_station("1", df, tmp_path, iterations=5, threads=1, refit=True)
+    assert report["classes"] == ["20B"]
+    assert report["test"]["accuracy"] == 0
+    assert report["model_kind"] == "catboost"
+    assert set(report["model_classes"]) == {"20B", "2EST"}
+    assert (tmp_path / "1.cbm").exists()
+
+
+def test_model_kinds_replace_stale_artifacts_and_empty_data_is_not_fabricated(tmp_path):
+    train_station("1", data(1).head(1), tmp_path, iterations=5, threads=1)
+    train_station("1", data(1), tmp_path, iterations=5, threads=1)
+    assert not (tmp_path / "1.prior.json").exists()
+    train_station("1", data(1).head(1), tmp_path, iterations=5, threads=1)
+    assert not (tmp_path / "1.cbm").exists()
+    assert train_station("2", data().head(0), tmp_path)["status"] == "no_labels"
+    assert not list(tmp_path.glob("2.*"))
+
+
+def test_empty_evaluation_period_does_not_block_training(tmp_path):
+    df = data(3).with_columns(pl.lit(2**40).alias("labelTimestamp"))
+    report = train_station("1", df, tmp_path, iterations=5, threads=1)
+    assert report["status"] == "trained"
+    assert report["backtest_status"] == "unavailable"
+    assert report["model_departures"] == 30
 
 
 def test_parallel_cli_and_stale_model_cleanup(tmp_path):
@@ -88,16 +152,18 @@ def test_parallel_cli_and_stale_model_cleanup(tmp_path):
     hive.mkdir()
     models.mkdir()
     (models / "999.cbm").touch()
+    (models / "999.prior.json").touch()
     for station in ("1", "2"):
         folder = hive / f"station={station}"
         folder.mkdir()
         data().write_ipc(folder / "part0.arrow")
     (hive / "dataset.json").write_text(json.dumps({"schema_version": SCHEMA_VERSION, "station_rows": {"1": 240, "2": 240}}))
     subprocess.run([sys.executable, "-m", "rfi.train", "--data", str(hive), "--models", str(models),
-                    "--iterations=5", "--threads=1", "--workers=2", "--min-trains=10", "--refit"],
+                    "--iterations=5", "--threads=1", "--workers=2", "--refit"],
                    cwd=Path(__file__).resolve().parents[1], check=True, capture_output=True, timeout=45)
     assert {path.stem for path in models.glob("*.cbm")} == {"1", "2"}
     assert len(json.loads((models / "report.json").read_text())["stations"]) == 2
+    assert not (models / "999.prior.json").exists()
 
 
 def test_late_training_labels_do_not_cross_validation_boundary():

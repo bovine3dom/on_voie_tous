@@ -8,7 +8,8 @@ from pathlib import Path
 def export(report, station_audit, output):
     with station_audit.open(newline="") as source:
         names = {row["station_id"]: row["station_name"] for row in csv.DictReader(source)}
-    fields = ["station_id", "station_name", "status", "labelled_departures", "training_departures"]
+    fields = ["station_id", "station_name", "status", "labelled_departures", "training_departures",
+              "model_departures", "model_kind", "backtest_status", "backtest_reason"]
     for group in ("all", "blank", "published", "changed"):
         fields.extend(f"{group}_{field}" for field in ("departures", "accuracy_pct", "baseline_accuracy_pct"))
     fields.extend(["official_accuracy_pct", "model_last_date"])
@@ -20,6 +21,7 @@ def export(report, station_audit, output):
                    "status": station["status"], "labelled_departures": station["departures"],
                    "training_departures": station.get("split_departures", {}).get("train"),
                    "model_last_date": station.get("model_last_date")}
+            row.update({key: station.get(key) for key in ("model_departures", "model_kind", "backtest_status", "backtest_reason")})
             test = station.get("test", {})
             for group in ("all", "blank", "published", "changed"):
                 metrics = test if group == "all" else test.get(group, {})

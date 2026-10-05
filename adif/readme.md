@@ -78,18 +78,23 @@ Training retains the first snapshot in each 15-minute lead-time interval across 
 There is no training lead-time cutoff. Delayed departures can have negative scheduled lead times.
 The audit snapshots are also retained for consistent 30-minute evaluation.
 Duplicate snapshots are removed. Each departure has a total training weight of one.
-All examples from a departure stay in one chronological training, validation, or test period.
+When three nonempty chronological periods exist, all examples from a departure stay in one period.
 Labels that cross a period boundary are excluded.
 Validation log loss selects the tree count. Test data is not used for training.
 `--refit` fits the final model on all data after the backtest.
+Without a usable backtest, the model fits all labelled data and records `backtest_status=unavailable`.
 
 The report separates blank, published, and revised platforms at the 30-minute target.
 These measurements do not validate other lead times or the client's merged platform display.
 It also records a historical-frequency baseline and agreement with the early official platform.
 Raw CatBoost scores are not calibrated probabilities of the physical platform.
-Models need at least 50 training departures, three service dates, and multiple training platforms.
+There is no minimum number of training departures or service dates.
+CatBoost fits histories with multiple platforms and variable inputs.
+Single-platform histories or constant inputs use a weighted platform-frequency predictor saved as `.prior.json`.
+The API serves both formats. A single observed platform receives a score of one, not a guarantee of future use.
+Only stations without labelled departures cannot receive a predictor.
 
-## Results after the five-departure recheck: 5 October 2026
+## Earlier results after the five-departure recheck: 5 October 2026
 
 The run read 75 archives, with 661 stations in the feed.
 Only four service dates had usable departure observations: 7–8 July and 4–5 October 2026.
