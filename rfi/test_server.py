@@ -50,9 +50,7 @@ def test_identity_string_labels_and_features(payload, url):
     assert features["leadMinutes"] == 30
 
 
-@pytest.mark.parametrize("change", [
-    {"cancelled": True}, {"category": "AUTOBUS"},
-    {"clock": "16:00"}, {"clock": "12:05"}])
+@pytest.mark.parametrize("change", [{"cancelled": True}, {"category": "AUTOBUS"}])
 def test_out_of_scope_rows_are_not_predicted(payload, change, monkeypatch):
     payload["data"][0].update(change)
     monkeypatch.setattr(server, "get_model", lambda *args: pytest.fail("Unneeded model load"))
@@ -73,6 +71,15 @@ def test_current_official_platform_is_a_categorical_input(payload, monkeypatch, 
     payload["data"][0]["platform"] = platform
     assert CLIENT.post("/predict?operator=rfi", json=payload).json()["predictions"]
     assert seen == [[expected]]
+
+
+@pytest.mark.parametrize("platform", ["", "--", "20B", "2EST"])
+@pytest.mark.parametrize("clock", ["11:59", "12:00", "12:05", "12:30", "16:00"])
+def test_all_lead_times_are_predicted_with_or_without_a_platform(payload, platform, clock):
+    payload["data"][0].update(platform=platform, clock=clock)
+    response = CLIENT.post("/predict?operator=rfi", json=payload)
+    assert response.status_code == 200
+    assert len(response.json()["predictions"]) == 1
 
 
 def test_all_platforms_are_returned_even_below_the_old_cutoff(payload, monkeypatch):
@@ -123,7 +130,7 @@ def test_shared_entrypoint_registers_both_operators():
 def test_station_catalog_uses_operator_selection_or_legacy_alias(tmp_path, monkeypatch, url):
     monkeypatch.setattr(server, "MODELS_DIR", tmp_path)
     (tmp_path / "1728.cbm").touch()
-    assert CLIENT.get(url).json() == {"stations": ["1728"], "leadMinutes": [15, 130]}
+    assert CLIENT.get(url).json() == {"stations": ["1728"]}
 
 
 def test_unknown_operator_is_rejected(payload):

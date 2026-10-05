@@ -28,26 +28,16 @@
     if (window.location.hostname !== 'www.garesetconnexions.sncf') return;
 
     function showBanner() {
+        if (!document.body) {
+            document.addEventListener('DOMContentLoaded', showBanner, {once: true});
+            return;
+        }
+        injectStyles();
         if (document.getElementById('on-voie-tous-banner')) return;
 
         const banner = document.createElement('div');
         banner.id = 'on-voie-tous-banner';
-        banner.innerHTML = 'Platform predictions provided by <a href="https://github.com/bovine3dom/on_voie_tous">On Voie Tous</a>, an experimental extension unaffiliated with the SNCF.';
-        banner.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            background: #f0ad4e;
-            color: #333;
-            padding: 8px 16px;
-            text-align: center;
-            font-size: 14px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            z-index: 999999;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        `;
-
+        banner.innerHTML = 'Platform predictions provided by <a href="https://github.com/bovine3dom/on_voie_tous">On Voie Tous</a>, an experimental extension unaffiliated with the SNCF or RFI.';
         document.body.appendChild(banner);
     }
 
@@ -57,6 +47,36 @@
         const style = document.createElement('style');
         style.id = 'on-voie-tous-styles';
         style.textContent = `
+            #on-voie-tous-banner {
+                all: initial !important;
+                display: block !important;
+                position: fixed !important;
+                inset: 0 0 auto !important;
+                background: #f0ad4e !important;
+                color: #333 !important;
+                padding: 8px 16px !important;
+                text-align: center !important;
+                font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+                z-index: 999999 !important;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
+            }
+            #on-voie-tous-banner a {
+                all: revert !important;
+                font: inherit !important;
+                color: inherit !important;
+                text-decoration: underline !important;
+                cursor: pointer !important;
+            }
+            tr[name="treno"] [id="RBinario"],
+            tr[name="treno"] [id="RBinario"] div,
+            .on-voie-rfi-estimate {
+                white-space: normal !important;
+                overflow-wrap: anywhere !important;
+            }
+            tr[name="treno"] [id="RBinario"] div,
+            .on-voie-rfi-estimate {
+                display: inline !important;
+            }
             .informationLine .wrapperLocation .contentLocation {
                 padding: 1em !important;
             }
@@ -198,7 +218,6 @@
         }
 
         showBanner();
-        injectStyles();
 
         for (const train of trains) {
             if (train.direction !== 'Departure') continue;
@@ -317,20 +336,13 @@
                         estimate = document.createElement('span');
                         estimate.className = MARKER;
                         estimate.title = 'Stima sperimentale. Probabilità del modello non calibrate. Controlla i monitor e gli annunci RFI.';
-                        estimate.style.cssText = 'font-size:0.85em;color:#785500;font-style:italic';
                         entry.platform.appendChild(estimate);
                     }
                     const text = (official(entry.platform) ? ' | ' : '') + labels;
                     if (estimate.textContent !== text) estimate.textContent = text;
                     displayed = true;
                 }
-                if (displayed && !document.getElementById('on-voie-rfi-banner')) {
-                    const banner = document.createElement('div');
-                    banner.id = 'on-voie-rfi-banner';
-                    banner.textContent = 'Stime sperimentali On Voie Tous, non informazioni RFI. Controlla i monitor e gli annunci della stazione.';
-                    banner.style.cssText = 'padding:8px;background:#fff0cc;color:#333;text-align:center';
-                    document.body.prepend(banner);
-                }
+                if (displayed) showBanner();
             });
         }
 

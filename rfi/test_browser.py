@@ -13,7 +13,7 @@ def row(id, platform="", delay=""):
     return f'''<tr name="treno" data-test-id="{id}">
     <td id="RVettore"><img alt="TRENITALIA"></td><td id="RCategoria"><img alt="Categoria REG"></td>
     <td id="RTreno">{id}</td><td id="RStazione">ROMA</td><td id="ROrario">12:30</td>
-    <td id="RRitardo">{delay}</td><td id="RBinario">{platform}</td>
+    <td id="RRitardo">{delay}</td><td id="RBinario"><div>{platform}</div></td>
     <td><button id="btn_{id}"></button></td></tr>'''
 
 
@@ -28,7 +28,7 @@ def page():
         page.route("**/Monitor?**", lambda route: route.fulfill(
             content_type="text/html", body="<html><body><table>"+row("11")+row("22", "20B")+row("33")+"</table></body></html>"))
         page.route("**/stations?operator=rfi", lambda route: route.fulfill(
-            json={"stations": ["1728"], "leadMinutes": [15, 130]}))
+            json={"stations": ["1728"]}))
         page.goto(URL)
         yield page
         browser.close()
@@ -190,6 +190,71 @@ def test_sncf_uses_the_default_api_and_preserves_existing_display(page, wrapped,
     assert [train["trainNumber"] for train in calls[0]["data"]] == ["11", "22"]
     assert rfi_calls == []
     assert page.locator("#on-voie-tous-banner").count() == (status == 200)
+
+
+def test_official_platform_and_predictions_share_a_wrapping_line(page):
+    page.route("**/predict?operator=rfi", lambda route: route.fulfill(json=predictions()))
+    page.add_style_tag(content="""
+        table { table-layout: fixed; width: 1000px; }
+        [id="RBinario"] { width: 300px; white-space: nowrap; }
+    """)
+    page.add_script_tag(path=str(SCRIPT))
+    platform = page.locator('[data-test-id="22"] [id="RBinario"]')
+    pw.expect(platform).to_have_text("20B | 2EST (90%)")
+    positions = platform.evaluate("""el => [el.querySelector('div'), el.querySelector('span')].map(node => {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        return range.getClientRects()[0].y;
+    })""")
+    assert positions[0] == pytest.approx(positions[1])
+    height = platform.evaluate("el => el.getBoundingClientRect().height")
+    page.add_style_tag(content='[id="RBinario"] { width: 60px; }')
+    assert platform.evaluate("el => el.getBoundingClientRect().height") > height
+    assert platform.evaluate("el => el.scrollWidth <= el.clientWidth")
+
+
+@pytest.mark.parametrize("operator", ["sncf", "rfi"])
+def test_banner_has_shared_styles_despite_page_css(page, operator):
+    if operator == "sncf":
+        page.route("https://www.garesetconnexions.sncf/**", lambda route: route.fulfill(
+            content_type="text/html", body="<html><body></body></html>"))
+        page.route("**/schedule-table/test", lambda route: route.fulfill(json=[{
+            "direction": "Departure", "uic": "0087756056",
+            "platform": {"track": "", "isTrackactive": False},
+        }]))
+        page.route("**/predict", lambda route: route.fulfill(json={"predictions": [{
+            "probabilities": [{"platform": "1", "prob": 0.9}],
+        }]}))
+        page.goto("https://www.garesetconnexions.sncf/fr/gares-services/nice/horaires")
+    else:
+        page.route("**/predict?operator=rfi", lambda route: route.fulfill(json=predictions()))
+    page.add_style_tag(content="""
+        div { display: none !important; background: blue !important; font-size: 40px !important; }
+        a { color: white !important; font-size: 40px !important; text-decoration: none !important; }
+        body { font: 24px serif; }
+    """)
+    page.add_script_tag(path=str(SCRIPT))
+    if operator == "sncf":
+        # A response before the body exists must still retain predictions and show the banner later.
+        result = page.evaluate("""async () => {
+            const body = document.body;
+            body.remove();
+            const data = await (await fetch('/schedule-table/test')).json();
+            document.documentElement.appendChild(body);
+            document.dispatchEvent(new Event('DOMContentLoaded'));
+            return data;
+        }""")
+        assert result[0]["platform"]["track"] == "1 (90%)"
+    banner = page.locator("#on-voie-tous-banner")
+    pw.expect(banner).to_be_visible()
+    assert banner.count() == 1
+    assert banner.evaluate("el => { const s = getComputedStyle(el); return [s.position, s.top, s.backgroundColor, s.color, s.fontSize, s.lineHeight]; }") == [
+        "fixed", "0px", "rgb(240, 173, 78)", "rgb(51, 51, 51)", "14px", "21px",
+    ]
+    link = banner.locator("a")
+    assert link.evaluate("el => { const s = getComputedStyle(el); return [s.color, s.fontSize, s.textDecorationLine]; }") == [
+        "rgb(51, 51, 51)", "14px", "underline",
+    ]
 
 
 def test_arrivals_are_not_modified(page):

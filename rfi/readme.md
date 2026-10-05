@@ -146,9 +146,10 @@ Optional fields are `delayMinutes`, `platform`, and `cancelled`.
 Scheduled times are inferred in `Europe/Rome`, as in the Julia preprocessing code.
 Responses include the train ID and clock. They do not depend on row order.
 
-Cancellations, buses, and unsupported lead times receive no prediction.
+Cancellations and buses receive no prediction.
 Published official platforms are model inputs, not reasons to skip a train.
-The supported range is 15–130 minutes before scheduled departure.
+There is no limit on the time before departure.
+The earlier backtest does not measure predictions outside the 15–130 minute range.
 Every eligible train receives the full sorted platform distribution, with no server-side score cutoff.
 Scores are not changed or rescaled. The client selects the displayed platforms.
 A missing model or incompatible schema leaves the station board unchanged.

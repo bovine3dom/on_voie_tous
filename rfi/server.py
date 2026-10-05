@@ -41,8 +41,7 @@ class Output(BaseModel):
 
 @app.get("/rfi/stations")
 def available_stations():
-    return {"stations": sorted(path.stem for path in MODELS_DIR.glob("*.cbm") if path.stem.isdecimal()),
-            "leadMinutes": [15, 130]}
+    return {"stations": sorted(path.stem for path in MODELS_DIR.glob("*.cbm") if path.stem.isdecimal())}
 
 
 @app.post("/rfi/predict", response_model=Output)
@@ -56,8 +55,6 @@ def rfi_predict(payload: Input):
         try:
             features = live_features(payload.ts, train)
         except ValueError:
-            continue
-        if not 15 <= features["leadMinutes"] <= 130:
             continue
         selected.append(train)
         rows.append(features)
