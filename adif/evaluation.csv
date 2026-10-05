@@ -1,18 +1,62 @@
 station_id,station_name,status,labelled_departures,training_departures,all_departures,all_accuracy_pct,all_baseline_accuracy_pct,blank_departures,blank_accuracy_pct,blank_baseline_accuracy_pct,published_departures,published_accuracy_pct,published_baseline_accuracy_pct,changed_departures,changed_accuracy_pct,changed_baseline_accuracy_pct,official_accuracy_pct,model_last_date
+03001,Mengíbar-Artichuela,insufficient_days,5,,,,,,,,,,,,,,,
+3216,València Joaquín Sorolla,insufficient_training_data,65,30,,,,,,,,,,,,,,
 10600,Valladolid Campo Grande,trained,188,81,66,75.758,28.788,2,0.0,0.0,64,78.125,29.688,2,50.0,0.0,96.875,2026-10-05
-17000,Madrid Chamartín Clara Campoamor,trained,1440,599,565,41.593,34.867,540,42.037,35.37,25,32.0,24.0,1,0.0,0.0,96.0,2026-10-05
+11300,Altsasu,insufficient_training_data,20,10,,,,,,,,,,,,,,
+17000,Madrid Chamartín Clara Campoamor,trained,1440,599,565,41.593,35.044,540,42.037,35.556,25,32.0,24.0,1,0.0,0.0,96.0,2026-10-05
 18000,Madrid Atocha Cercanías,trained,1851,782,49,71.429,48.98,35,65.714,51.429,14,85.714,42.857,0,,,100.0,2026-10-05
+20300,Monforte de Lemos,insufficient_training_data,23,9,,,,,,,,,,,,,,
+20402,Cecebre,insufficient_days,7,,,,,,,,,,,,,,,
+20403,Cambre,insufficient_days,7,,,,,,,,,,,,,,,
+20404,O Burgo-Santiago,insufficient_days,14,,,,,,,,,,,,,,,
+20410,Elviña-Universidade,insufficient_days,14,,,,,,,,,,,,,,,
+22100,Ourense,insufficient_training_data,83,33,,,,,,,,,,,,,,
+22200,Guillarei,insufficient_days,4,,,,,,,,,,,,,,,
+22300,Redondela,insufficient_training_data,30,11,,,,,,,,,,,,,,
+22308,Vigo Guixar,insufficient_training_data,14,5,,,,,,,,,,,,,,
 31400,Santiago de Compostela-Daniel Castelao,insufficient_training_data,111,29,,,,,,,,,,,,,,
+31411,Uxes,insufficient_days,11,,,,,,,,,,,,,,,
+35206,Navalmoral de la Mata,insufficient_training_data,26,13,,,,,,,,,,,,,,
+37603,Montijo,insufficient_training_data,14,3,,,,,,,,,,,,,,
+40100,Zafra,insufficient_training_data,15,8,,,,,,,,,,,,,,
+40105,Llerena,insufficient_training_data,3,1,,,,,,,,,,,,,,
+42015,Calañas,insufficient_training_data,11,4,,,,,,,,,,,,,,
+50202,Almuradiel-Viso del Marqués,insufficient_days,8,,,,,,,,,,,,,,,
+50207,Vilches,insufficient_days,10,,,,,,,,,,,,,,,
+50400,Espeluy,insufficient_training_data,25,11,,,,,,,,,,,,,,
+50407,Villa del Río,insufficient_training_data,26,11,,,,,,,,,,,,,,
+50413,Alcolea de Córdoba,insufficient_training_data,22,11,,,,,,,,,,,,,,
 50500,Córdoba Julio Anguita,trained,362,150,136,75.735,47.059,91,72.527,50.549,45,82.222,40.0,1,0.0,0.0,97.778,2026-10-05
 51003,Sevilla Santa Justa,trained,423,197,160,66.25,55.0,65,33.846,27.692,95,88.421,73.684,4,0.0,0.0,95.789,2026-10-05
 54413,Málaga María Zambrano,trained,353,156,130,86.154,59.231,12,58.333,8.333,118,88.983,64.407,1,0.0,0.0,99.153,2026-10-05
+55018,San Roque-La Línea,insufficient_training_data,17,8,,,,,,,,,,,,,,
+56200,Guadix,insufficient_training_data,23,9,,,,,,,,,,,,,,
+56310,Huércal-Viator,insufficient_training_data,4,1,,,,,,,,,,,,,,
 60000,Madrid Puerta de Atocha-Almudena Grandes,trained,278,115,117,26.496,22.222,111,25.225,21.622,6,50.0,33.333,0,,,100.0,2026-10-05
 60600,Albacete Los Llanos,insufficient_training_data,116,49,,,,,,,,,,,,,,
 60911,Alacant/Alicante Terminal,trained,167,76,61,65.574,32.787,10,50.0,30.0,51,68.627,33.333,2,0.0,0.0,96.078,2026-10-05
-65000,València Estació del Nord,trained,303,138,120,29.167,19.167,119,29.412,19.328,1,0.0,0.0,0,,,100.0,2026-10-05
+61200,Murcia del Carmen,insufficient_training_data,75,29,,,,,,,,,,,,,,
+65000,València Estació del Nord,trained,303,138,120,29.167,18.333,119,29.412,18.487,1,0.0,0.0,0,,,100.0,2026-10-05
 65003,València Cabanyal,trained,195,83,83,95.181,61.446,27,92.593,37.037,56,96.429,73.214,0,,,100.0,2026-10-05
-65300,Castelló de la Plana,trained,154,70,59,64.407,37.288,7,28.571,28.571,52,69.231,38.462,5,40.0,60.0,90.385,2026-10-05
+65300,Castelló de la Plana,trained,154,70,59,64.407,35.593,7,28.571,28.571,52,69.231,36.538,5,40.0,60.0,90.385,2026-10-05
+69002,Benigànim,insufficient_days,2,,,,,,,,,,,,,,,
+69006,Albaida,insufficient_days,2,,,,,,,,,,,,,,,
 70103,Alcalá de Henares,trained,312,140,119,84.874,74.79,114,86.842,76.316,5,40.0,40.0,0,,,100.0,2026-10-05
+71400,Reus,insufficient_days,26,,,,,,,,,,,,,,,
 71801,Barcelona Sants,trained,1021,675,240,50.0,39.167,200,51.5,41.5,40,42.5,27.5,0,,,100.0,2026-10-05
+73001,Puigverd de Lleida-Artesa de Lleida,insufficient_training_data,12,8,,,,,,,,,,,,,,
+73002,Juneda,insufficient_training_data,23,11,,,,,,,,,,,,,,
+73003,Les Borges Blanques,insufficient_training_data,18,12,,,,,,,,,,,,,,
+73004,La Floresta,insufficient_days,7,,,,,,,,,,,,,,,
+73005,Vinaixa,insufficient_days,12,,,,,,,,,,,,,,,
+73006,Vimbodí i Poblet,insufficient_days,8,,,,,,,,,,,,,,,
+73007,L'Espluga de Francolí,insufficient_days,11,,,,,,,,,,,,,,,
+73008,Montblanc,insufficient_days,11,,,,,,,,,,,,,,,
+73009,Vilaverd,insufficient_days,6,,,,,,,,,,,,,,,
+73010,La Riba,insufficient_days,6,,,,,,,,,,,,,,,
+73100,La Plana-Picamoixons,insufficient_training_data,21,11,,,,,,,,,,,,,,
+74200,Huesca,insufficient_training_data,21,9,,,,,,,,,,,,,,
+79309,Figueres,insufficient_days,11,,,,,,,,,,,,,,,
+80100,Pamplona/Iruña,insufficient_training_data,44,18,,,,,,,,,,,,,,
 97200,Mirasierra Paco de Lucía,trained,287,112,100,100.0,83.0,100,100.0,83.0,0,,,0,,,,2026-10-05
 98305,Aeropuerto T4,single_platform,147,68,,,,,,,,,,,,,,

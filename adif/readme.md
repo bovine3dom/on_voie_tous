@@ -89,24 +89,33 @@ It also records a historical-frequency baseline and agreement with the early off
 Raw CatBoost scores are not calibrated probabilities of the physical platform.
 Models need at least 50 training departures, three service dates, and multiple training platforms.
 
-## Initial results: 5 October 2026
+## Results after the five-departure recheck: 5 October 2026
 
 The run read 75 archives, with 661 stations in the feed.
 Only four service dates had usable departure observations: 7–8 July and 4–5 October 2026.
-The other archive dates do not establish continuous board coverage.
+July contributed 1,018,418 board messages before the subscription ID update.
+All 78,300 archived August and September records were null SignalR completions, with no station boards.
 
 | Split | Stations |
 | --- | ---: |
-| Needs predictions | 17 |
-| Skip | 53 |
-| Insufficient data | 591 |
+| Needs predictions | 67 |
+| Skip | 420 |
+| Insufficient data | 174 |
+
+The initial minimum of 100 selected only 17 stations and left 591 unresolved.
+The 498 unresolved stations with 1–99 eligible departures were rechecked with a minimum of five.
+Of these, 50 need predictions, 367 can be skipped, and 81 remain unresolved.
+The other 93 unresolved stations had no eligible 30-minute observations.
 
 `adif/stations.txt` records the selected IDs. Detailed counts remain in `adif/results/stations.csv`.
 For example, missing platforms at 30 minutes were 96.8% at Madrid Chamartín and 91.8% at Barcelona Sants.
 Stations with insufficient observations are not confirmed skips.
 
-Julia produced 201,662 examples from 7,708 labelled departures for the selected stations.
-Fourteen stations produced models. Two lacked sufficient training data, and one had a single training platform.
+Julia produced 242,458 examples from 8,525 labelled departures at 61 selected stations.
+Six selected stations had no stable targets. Twenty lacked three service dates.
+Twenty-six had insufficient training data, and one had a single training platform.
+Fourteen stations still produced models. The new candidates do not yet meet the training requirements.
+A lower audit minimum does not supply more training history.
 The models were refitted on all labelled data after evaluation.
 
 Training used the available July dates. Validation used 4 October, and testing used 5 October.
@@ -116,7 +125,7 @@ At 30 minutes, the highest-score platform agreed with the later report as follow
 | --- | ---: | ---: | ---: |
 | All | 2,005 | 59.1% | 43.7% |
 | Blank official platform | 1,433 | 51.8% | 41.1% |
-| Published official platform | 572 | 77.4% | 50.3% |
+| Published official platform | 572 | 77.4% | 50.2% |
 | Published platform later changed | 16 | 18.8% | 18.8% |
 
 Copying the early official platform agreed with 97.2% of later published targets.
