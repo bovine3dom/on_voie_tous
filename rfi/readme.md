@@ -56,6 +56,33 @@ Cancelled trains, buses, conflicting timestamps, and departures without stable l
 A published early platform is never used as an input or a training example.
 This label is not proof of the physical platform used.
 
+## Train and evaluate
+
+From the repository root, use the existing SNCF Python environment:
+
+```bash
+uv sync --project predict --frozen
+uv run --project predict python -m rfi.train
+uv run --project predict python -m pytest rfi/test_train.py
+```
+
+The trainer reuses SNCF station discovery, Arrow loading, and the `.cbm` model format.
+It loads one station at a time. Models are saved in `rfi/models/`.
+Use `--stations 1728 2416` for a small run.
+The default minimum is 50 distinct training departures and three service dates.
+Stations with only one training platform are skipped, as in the SNCF trainer.
+
+Dates are split into chronological training, validation, and test periods.
+All examples from a departure stay in one period.
+Targets that cross the next period boundary are excluded.
+Validation selects the tree count. Test data is not used for training.
+Unknown test platforms remain in the accuracy denominator.
+
+`rfi/models/report.json` records accuracy, coverage, and a historical-frequency baseline.
+The primary measurements use only blank-platform cases at the 30-minute lead time.
+The confidence scores are raw CatBoost probabilities, not calibrated accuracy estimates.
+Saved models use only the training period, so their held-out measurements remain valid.
+
 ## Results
 
 The audit read 751 archives, with observations from 30 March to 5 October 2026.
