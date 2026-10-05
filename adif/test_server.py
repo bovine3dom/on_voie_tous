@@ -48,13 +48,29 @@ def test_adif_identity_official_input_and_full_distribution(payload, url):
 @pytest.mark.parametrize("change", [
     {"stopType": "destination"}, {"cancelled": True}, {"status": "cancelled"},
     {"category": "AUTOBUS"}, {"trafficType": "B"}, {"trainNumber": "BUS00123"}, {"platform": "BUS"},
-    {"scheduledTime": "2026-04-01T12:05:00+02:00"},
-    {"scheduledTime": "2026-04-01T16:00:00+02:00"},
 ])
-def test_arrivals_and_out_of_scope_rows_are_skipped(payload, monkeypatch, change):
+def test_arrivals_cancelled_trains_and_buses_are_skipped(payload, monkeypatch, change):
     payload["data"][0].update(change)
     monkeypatch.setattr(server, "get_model", lambda *args: pytest.fail("Unneeded model load"))
     assert CLIENT.post("/predict?operator=adif", json=payload).json() == {"predictions": []}
+
+
+@pytest.mark.parametrize("clock", ["11:59", "12:00", "12:05", "12:30", "16:00"])
+@pytest.mark.parametrize("platform", ["", "--", "20B", "2EST"])
+def test_every_lead_time_and_official_platform_is_predicted(payload, monkeypatch, clock, platform):
+    payload["data"][0].update(scheduledTime=f"2026-04-01T{clock}:00+02:00", platform=platform)
+    class Model:
+        feature_names_ = FEATURES
+        classes_ = ["2EST", "20B"]
+
+        def predict_proba(self, df):
+            assert df["predictedPlatform"].to_list() == [platform if platform not in ("", "--") else "MISSING"]
+            return np.tile([0.6, 0.4], (df.height, 1))
+    monkeypatch.setattr(server, "get_model", lambda *args: Model())
+    response = CLIENT.post("/predict?operator=adif", json=payload)
+    assert response.status_code == 200
+    assert len(response.json()["predictions"]) == 1
+    assert response.json()["predictions"][0]["clock"] == clock
 
 
 @pytest.mark.parametrize("change", [
@@ -86,4 +102,4 @@ def test_shared_catalog_lists_only_station_models(tmp_path, monkeypatch, url):
     monkeypatch.setattr(server, "MODELS_DIR", tmp_path)
     (tmp_path / "05123.cbm").touch()
     (tmp_path / "report.json").touch()
-    assert CLIENT.get(url).json() == {"stations": ["05123"], "leadMinutes": [15, 130]}
+    assert CLIENT.get(url).json() == {"stations": ["05123"]}

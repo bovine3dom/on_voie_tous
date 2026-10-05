@@ -35,8 +35,7 @@ class Input(BaseModel):
 
 @app.get("/adif/stations")
 def available_stations():
-    return {"stations": sorted(path.stem for path in MODELS_DIR.glob("*.cbm") if path.stem.isdecimal()),
-            "leadMinutes": [15, 130]}
+    return {"stations": sorted(path.stem for path in MODELS_DIR.glob("*.cbm") if path.stem.isdecimal())}
 
 
 @app.post("/adif/predict", response_model=PredictionOutput, response_model_exclude_none=True)
@@ -50,8 +49,6 @@ def adif_predict(payload: Input):
                 or re.search(r"\bbus|autobus|pullman|autoserv|autocors", train.carrier + " " + train.category, re.I)):
             continue
         features = live_features(payload.ts, train)
-        if not 15 <= features["leadMinutes"] <= 130:
-            continue
         rows.append(features)
         minute = features["scheduledMinute"]
         identities.append({"trainId": train.trainId, "clock": f"{minute//60:02d}:{minute%60:02d}"})

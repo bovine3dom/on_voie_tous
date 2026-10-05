@@ -100,8 +100,10 @@ Optional fields are `carrier`, `category`, `trafficType`, `status`, `delayMinute
 Use the planned technical number, company, sorted unique product names, and sorted unique destination codes from the feed.
 Join multiple products or destination codes with `|`.
 
-The API supports 15–130 minutes before scheduled departure.
-It returns every platform score, with train identity and local clock fields.
+Station selection limits which stations have models, not which trains receive predictions.
+At a station with a model, every non-cancelled train departure can receive predictions.
+There is no lead-time cutoff. The lead time remains a model input.
+The API returns every platform score, with train identity and local clock fields.
 The official platform is an input, not a reason to skip a train.
 No ADIF browser adapter is included in this work.
 
