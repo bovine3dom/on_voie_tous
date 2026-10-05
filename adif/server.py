@@ -45,7 +45,9 @@ def adif_predict(payload: Input):
     for train in payload.data:
         if train.cancelled or train.stopType == "destination" or re.search(r"cancel|suprimid|anulad", train.status, re.I):
             continue
-        if train.trafficType == "B" or re.search(r"\bbus|autobus|pullman|autoserv|autocors", train.carrier + " " + train.category, re.I):
+        if (train.trafficType == "B" or train.trainNumber.upper().startswith("BUS")
+                or train.platform.strip().upper() == "BUS"
+                or re.search(r"\bbus|autobus|pullman|autoserv|autocors", train.carrier + " " + train.category, re.I)):
             continue
         features = live_features(payload.ts, train)
         if not 15 <= features["leadMinutes"] <= 130:

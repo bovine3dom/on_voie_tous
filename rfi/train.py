@@ -135,10 +135,10 @@ def train_folder(job):
     return report
 
 
-def main():
+def main(root=ROOT):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data", type=Path, default=ROOT / "hive")
-    parser.add_argument("--models", type=Path, default=ROOT / "models")
+    parser.add_argument("--data", type=Path, default=root / "hive")
+    parser.add_argument("--models", type=Path, default=root / "models")
     parser.add_argument("--stations", nargs="*", help="Optional station IDs")
     parser.add_argument("--iterations", type=int, default=100)
     parser.add_argument("--threads", type=int, default=4)

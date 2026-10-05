@@ -21,6 +21,11 @@ Use [the userscript](src/content.user.js) for [RFI departure boards](https://iec
 Platforms appear as `official | predicted`.
 See [rfi/](rfi/readme.md) to train models or run the server.
 
+## ADIF models
+
+See [adif/](adif/readme.md) to prepare data, train models, and serve predictions.
+There is no ADIF browser adapter yet.
+
 ## Disclaimer
 
 Sometimes the platform might change. You will notice when this happens because the train will not arrive at your platform.

@@ -47,7 +47,7 @@ def test_adif_identity_official_input_and_full_distribution(payload, url):
 
 @pytest.mark.parametrize("change", [
     {"stopType": "destination"}, {"cancelled": True}, {"status": "cancelled"},
-    {"category": "AUTOBUS"}, {"trafficType": "B"},
+    {"category": "AUTOBUS"}, {"trafficType": "B"}, {"trainNumber": "BUS00123"}, {"platform": "BUS"},
     {"scheduledTime": "2026-04-01T12:05:00+02:00"},
     {"scheduledTime": "2026-04-01T16:00:00+02:00"},
 ])
