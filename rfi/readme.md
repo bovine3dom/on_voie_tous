@@ -83,6 +83,33 @@ The primary measurements use only blank-platform cases at the 30-minute lead tim
 The confidence scores are raw CatBoost probabilities, not calibrated accuracy estimates.
 Saved models use only the training period, so their held-out measurements remain valid.
 
+## Serve predictions
+
+Start the shared SNCF and RFI server from the repository root:
+
+```bash
+uv run --project predict python -m rfi.server
+uv run --project predict python -m pytest predict/test_predict.py rfi/test_server.py
+```
+
+The existing `/predict` route still serves SNCF.
+The `/rfi/predict` route uses separate RFI models and the shared model loader and response schema.
+The `/rfi/stations` route lists available models.
+Set `RFI_MODELS_DIR` to change the RFI model directory.
+`PREDICT_HOST` and `PREDICT_PORT` retain their SNCF meanings.
+
+RFI inputs contain a UTC collection timestamp, a station ID, and compact train fields.
+Train fields include `trainId`, `trainNumber`, `clock`, `destination`, `carrier`, and `category`.
+Optional fields are `delayMinutes`, `platform`, and `cancelled`.
+Scheduled times are inferred in `Europe/Rome`, as in the Julia preprocessing code.
+Responses include the train ID and clock. They do not depend on row order.
+
+Published platforms, cancellations, buses, and unsupported lead times receive no prediction.
+The supported range is 15–130 minutes before scheduled departure.
+The default raw probability threshold is 0.8.
+Set `RFI_MIN_CONFIDENCE` between zero and one to change it.
+A missing model or incompatible schema leaves the station board unchanged.
+
 ## Results
 
 The audit read 751 archives, with observations from 30 March to 5 October 2026.

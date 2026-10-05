@@ -17,8 +17,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MODELS_DIR = "models"
-_model_cache: dict[str, CatBoostClassifier] = {}
+MODELS_DIR = os.getenv("SNCF_MODELS_DIR", os.path.join(os.path.dirname(__file__), "models"))
+_model_cache: dict[tuple[str, str], CatBoostClassifier] = {}
 
 CATEGORICAL_COLS = [
     "station",
@@ -39,11 +39,15 @@ CATEGORICAL_COLS = [
 UNKNOWN_PLATFORM = "???"
 
 
-def get_model(station_id: str) -> CatBoostClassifier:
-    if station_id in _model_cache:
-        return _model_cache[station_id]
+def get_model(station_id: str, models_dir=None) -> CatBoostClassifier:
+    if not station_id.isascii() or not station_id.isdecimal():
+        raise HTTPException(status_code=400, detail="Invalid station ID")
+    directory = os.path.abspath(MODELS_DIR if models_dir is None else models_dir)
+    key = (directory, station_id)
+    if key in _model_cache:
+        return _model_cache[key]
 
-    model_path = os.path.join(MODELS_DIR, f"{station_id}.cbm")
+    model_path = os.path.join(directory, f"{station_id}.cbm")
     if not os.path.exists(model_path):
         raise HTTPException(
             status_code=404, detail=f"No model found for station {station_id}"
@@ -51,7 +55,7 @@ def get_model(station_id: str) -> CatBoostClassifier:
 
     model = CatBoostClassifier()
     model.load_model(model_path)
-    _model_cache[station_id] = model
+    _model_cache[key] = model
     return model
 
 

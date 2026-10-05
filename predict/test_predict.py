@@ -1,7 +1,26 @@
-import json
+import importlib
+import numpy as np
 import pytest
 from httpx import AsyncClient, ASGITransport
 from predict import app, normalise_sncf_data
+
+FEATURES = ["predictedDestination", "scheduledDestination", "trainNumber", "scheduledTime"]
+
+
+@pytest.fixture(autouse=True)
+def model_stub(monkeypatch):
+    class Model:
+        feature_names_ = FEATURES
+        classes_ = ["1", "2"]
+
+        def predict(self, df):
+            return np.array([["1"]] * df.height)
+
+        def predict_proba(self, df):
+            return np.tile([0.75, 0.25], (df.height, 1))
+
+    module = importlib.import_module("predict.predict")
+    monkeypatch.setattr(module, "get_model", lambda station: Model())
 
 
 @pytest.fixture
@@ -122,6 +141,6 @@ async def test_predict(sample_payload):
 
 
 def test_normalise_sncf_data(sample_payload):
-    df = normalise_sncf_data(sample_payload)
+    df = normalise_sncf_data(sample_payload, FEATURES)
     assert df.shape[0] == 2
     assert "scheduledDestination" in df.columns
