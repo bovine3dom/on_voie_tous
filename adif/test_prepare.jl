@@ -26,7 +26,7 @@ latest(value="2EST"; kwargs...) = board(at="2026-04-01T10:30:00Z", platform=valu
 @testset "ADIF departure identity, official inputs, and later labels" begin
     scan = parsed(board(platform="20B"), late(id="999"), latest(id="999"))
     rows = ADIF.rows(scan, Set(["51003"]))["51003"]
-    @test length(rows) == 1
+    @test length(rows) == 2
     @test rows[1].trainNumber == "00123"
     @test rows[1].predictedPlatform == "20B"
     @test rows[1].actualPlatform == "2EST"
@@ -73,12 +73,26 @@ end
     @test ADIF.instant("2026-10-25T02:30:00+01:00") - ADIF.instant("2026-10-25T02:30:00+02:00") == 3600
 end
 
+@testset "Full board range and station selection" begin
+    scan = parsed(board(at="2026-04-01T06:30:00Z", platform="20B"),
+                  board(at="2026-04-01T10:35:00Z", delay=20, platform="20B"),
+                  board(at="2026-04-01T10:45:00Z", delay=20, platform="2EST"),
+                  board(at="2026-04-01T10:50:00Z", delay=20, platform="2EST"))
+    rows = ADIF.rows(scan, Set(["51003"]))["51003"]
+    @test Set(row.leadMinutes for row in rows) == Set([240.0, -5.0])
+    @test all(row.timestamp < row.labelTimestamp for row in rows)
+    @test sum(row.weight for row in rows) ≈ 1
+    @test isempty(ADIF.rows(scan, Set(["99999"])))
+    @test isempty(scan.availability.runs)
+    @test ADIF.rows(ADIF.merge!(ADIF.Scan(), scan), Set(["51003"]))["51003"] == rows
+end
+
 @testset "Delay, sampling weights, and archive cache" begin
     scan = parsed(board(delay=15), board(at="2026-04-01T09:30:00Z", platform="20B"),
                   board(at="2026-04-01T10:35:00Z", delay=15, platform="2EST"),
                   board(at="2026-04-01T10:45:00Z", delay=15, platform="2EST"))
     rows = ADIF.rows(scan, Set(["51003"]))["51003"]
-    @test length(rows) == 2
+    @test length(rows) == 3
     @test sum(row.weight for row in rows) == 1
     @test only(row.delayMinutes for row in rows if row.horizon == 30) == 15
     mktempdir() do directory
@@ -109,6 +123,6 @@ end
         @test isempty(ADIF.reports(control, [path], joinpath(directory, "empty"), 30, 100, 0.1, 0.01, 5, 0.0, 0))
         arrow = joinpath(directory, "part0.arrow")
         Arrow.write(arrow, ADIF.rows(first, selected)["51003"]; file=true)
-        @test collect(Arrow.Table(arrow).predictedPlatform) == ["20B"]
+        @test collect(Arrow.Table(arrow).predictedPlatform) == ["20B", "2EST"]
     end
 end

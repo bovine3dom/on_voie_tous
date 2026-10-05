@@ -75,7 +75,10 @@ The target is an online report, not proof of the physical platform used.
 `adif/hive/dataset.json` records the input archives and selected stations.
 Generated data, caches, models, and detailed reports are excluded from Git.
 
-Each departure contributes at most one example per saved lead time, with a total weight of one.
+Training retains the first snapshot in each 15-minute lead-time interval across the full observed board range.
+There is no training lead-time cutoff. Delayed departures can have negative scheduled lead times.
+The audit snapshots are also retained for consistent 30-minute evaluation.
+Duplicate snapshots are removed. Each departure has a total training weight of one.
 All examples from a departure stay in one chronological training, validation, or test period.
 Labels that cross a period boundary are excluded.
 Validation log loss selects the tree count. Test data is not used for training.
