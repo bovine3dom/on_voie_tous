@@ -1,11 +1,12 @@
 import os
 import polars as pl
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
 from catboost import CatBoostClassifier
 from datetime import datetime
-from typing import Optional
+from typing import Literal
 import uvicorn
 
 app = FastAPI()
@@ -110,6 +111,8 @@ class TrainPrediction(BaseModel):
     platform: str
     confidence: float
     probabilities: list[PlatformProbability]
+    trainId: str | None = None
+    clock: str | None = None
 
 
 class PredictionOutput(BaseModel):
@@ -121,8 +124,14 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/predict", response_model=PredictionOutput)
-def predict(payload: PredictionInput):
+@app.post("/predict", response_model=PredictionOutput, response_model_exclude_none=True)
+def predict(payload: PredictionInput, operator: Literal["sncf", "rfi"] = "sncf"):
+    if operator == "rfi":
+        from rfi.server import Input, rfi_predict
+        try:
+            return rfi_predict(Input.model_validate(payload.model_dump()))
+        except ValidationError as error:
+            raise RequestValidationError(error.errors()) from error
     payload_dict = payload.model_dump()
     station_id = payload_dict["station"]
 

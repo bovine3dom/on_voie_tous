@@ -123,19 +123,18 @@ async def test_health():
 
 
 @pytest.mark.asyncio
-async def test_predict(sample_payload):
+@pytest.mark.parametrize("url", ["/predict", "/predict?operator=sncf"])
+async def test_predict(sample_payload, url):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/predict", json=sample_payload)
+        response = await client.post(url, json=sample_payload)
         assert response.status_code == 200
         data = response.json()
         assert "predictions" in data
         assert isinstance(data["predictions"], list)
         assert len(data["predictions"]) == 2
         for pred in data["predictions"]:
-            assert "platform" in pred
-            assert "confidence" in pred
-            assert "probabilities" in pred
+            assert set(pred) == {"platform", "confidence", "probabilities"}
             total_prob = sum(p["prob"] for p in pred["probabilities"])
             assert 0.99 <= total_prob <= 1.01
 

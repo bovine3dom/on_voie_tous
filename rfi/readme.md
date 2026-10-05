@@ -95,8 +95,9 @@ The other stations lacked stable targets, enough training data, or multiple trai
 
 `rfi/evaluation.csv` records the per-station backtest results.
 The test period contained 11,298 eligible 30-minute cases across the trained models.
-At the raw-score cutoff of 0.8, coverage was 46.7% and agreement with later reports was 97.8%.
-Without abstention, agreement was 70.5%, compared with 71.1% for the historical-frequency baseline.
+At an analysis cutoff of 0.8, coverage was 46.7% and agreement with later reports was 97.8%.
+Without that cutoff, top-choice agreement was 70.5%, compared with 71.1% for the historical-frequency baseline.
+These cutoff measurements do not describe the current grouped client display.
 CatBoost did not improve the overall top-choice accuracy over that baseline.
 
 | Station | Coverage at 0.8 | Agreement for accepted estimates |
@@ -117,12 +118,15 @@ Model files and detailed reports remain local in `rfi/models/`.
 Start the shared SNCF and RFI server from the repository root:
 
 ```bash
-uv run --project predict python -m rfi.server
+uv run --project predict python -m predict.server
 uv run --project predict python -m pytest predict/test_predict.py rfi/test_server.py
 ```
 
-The existing `/predict` route still serves SNCF.
-The `/rfi/predict` route uses separate RFI models and the shared model loader and response schema.
+Both operators use the same FastAPI app and `POST /predict` endpoint.
+Use `/predict?operator=rfi` for RFI and `/predict?operator=sncf` for SNCF.
+If `operator` is absent, the endpoint selects SNCF.
+The `/rfi/predict` route remains an RFI alias.
+RFI uses separate models and the shared model loader and response schema.
 The `/rfi/stations` route lists available models.
 Set `RFI_MODELS_DIR` to change the RFI model directory.
 Restart the server after training to clear its model cache.
@@ -136,8 +140,8 @@ Responses include the train ID and clock. They do not depend on row order.
 
 Published platforms, cancellations, buses, and unsupported lead times receive no prediction.
 The supported range is 15–130 minutes before scheduled departure.
-The default raw probability threshold is 0.8.
-Set `RFI_MIN_CONFIDENCE` between zero and one to change it.
+Every eligible train receives the full sorted platform distribution, with no server-side score cutoff.
+Scores are not changed or rescaled. The client selects the displayed platforms.
 A missing model or incompatible schema leaves the station board unchanged.
 
 ## Show estimates on RFI boards
@@ -147,12 +151,18 @@ The extension manifest now includes the RFI departure monitor.
 The SNCF userscript is unchanged.
 
 The default server URL is `https://compute.olie.science/on_voie_tous`.
-It must run `rfi.server` before RFI predictions are available.
+It must run `predict.server` before RFI predictions are available.
+The previous `rfi.server` command remains compatible.
 Change `SERVER` in the userscript for another server.
 This work does not deploy a public server.
 
 The adapter requests only compact train fields.
 It displays `Stima` beside blank official platform cells.
+As in SNCF, scores above 0.05 enter the display selection.
+Platforms with scores of at least 0.30 remain separate.
+Consecutive numeric or single-letter labels with lower scores are merged, and their scores are added.
+Compound labels such as `2EST` and `20B` remain separate.
+The client displays at most two platforms or ranges with scores of at least 0.10.
 It leaves official platforms unchanged and rejects stale responses.
 Server failures leave the board unchanged.
 Model scores are not calibrated probabilities of the physical platform.

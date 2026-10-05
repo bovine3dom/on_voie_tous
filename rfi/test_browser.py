@@ -28,7 +28,7 @@ def page():
         page.route("**/Monitor?**", lambda route: route.fulfill(
             content_type="text/html", body="<html><body><table>"+row("11")+row("22", "20B")+row("33")+"</table></body></html>"))
         page.route("**/rfi/stations", lambda route: route.fulfill(
-            json={"stations": ["1728"], "minConfidence": 0.8, "leadMinutes": [15, 130]}))
+            json={"stations": ["1728"], "leadMinutes": [15, 130]}))
         page.goto(URL)
         yield page
         browser.close()
@@ -46,7 +46,7 @@ def test_estimates_use_identity_and_never_replace_official_platforms(page):
     def respond(route):
         calls.append(route.request.post_data_json)
         route.fulfill(json=predictions())
-    page.route("**/rfi/predict", respond)
+    page.route("**/predict?operator=rfi", respond)
     page.add_script_tag(path=str(SCRIPT))
     pw.expect(page.locator(".on-voie-rfi-estimate")).to_have_count(2)
     assert page.locator('[data-test-id="11"] .on-voie-rfi-estimate').inner_text().startswith("Stima: 20B")
@@ -57,12 +57,32 @@ def test_estimates_use_identity_and_never_replace_official_platforms(page):
     assert len(calls) == 1  # Own DOM changes must not cause request loops.
 
 
+@pytest.mark.parametrize("probabilities,expected", [
+    ([("3", 0.20), ("1", 0.25), ("2", 0.25), ("4", 0.05)], "Stima: 1-3 (70%)"),
+    ([("8", 0.40), ("2", 0.20), ("1", 0.20)], "Stima: 8 (40%), 1-2 (40%)"),
+    ([("C", 0.20), ("A", 0.25), ("B", 0.25)], "Stima: A-C (70%)"),
+    ([("1", 0.06), ("2", 0.06)], "Stima: 1-2 (12%)"),
+    ([("2EST", 0.25), ("3", 0.25)], "Stima: 2EST (25%), 3 (25%)"),
+    ([("20B", 0.25), ("21", 0.25)], "Stima: 20B (25%), 21 (25%)"),
+    ([("1", 0.4), ("2", 0.3), ("3", 0.2)], "Stima: 1 (40%), 2 (30%)"),
+])
+def test_client_merges_low_score_neighbours_before_display_filter(page, probabilities, expected):
+    page.route("**/predict?operator=rfi", lambda route: route.fulfill(json={"predictions": [{
+        "trainId": "11", "clock": "12:30",
+        "probabilities": [{"platform": platform, "prob": prob} for platform, prob in probabilities],
+    }]}))
+    page.add_script_tag(path=str(SCRIPT))
+    estimate = page.locator('[data-test-id="11"] .on-voie-rfi-estimate')
+    pw.expect(estimate).to_have_text(expected)
+    assert page.locator('[data-test-id="22"] [id="RBinario"]').inner_text() == "20B"
+
+
 def test_an_official_update_discards_an_inflight_prediction(page):
     def respond(route):
         page.locator('[data-test-id="11"] [id="RBinario"]').evaluate("el => el.textContent = '9'")
         page.locator('[data-test-id="33"] [id="RBinario"]').evaluate("el => el.textContent = '10'")
         route.fulfill(json=predictions())
-    page.route("**/rfi/predict", respond)
+    page.route("**/predict?operator=rfi", respond)
     page.add_script_tag(path=str(SCRIPT))
     pw.expect(page.locator('[data-test-id="11"] [id="RBinario"]')).to_have_text("9")
     page.wait_for_timeout(800)
@@ -70,7 +90,7 @@ def test_an_official_update_discards_an_inflight_prediction(page):
 
 
 def test_a_failed_server_leaves_the_board_unchanged(page):
-    page.route("**/rfi/predict", lambda route: route.fulfill(status=503))
+    page.route("**/predict?operator=rfi", lambda route: route.fulfill(status=503))
     page.add_script_tag(path=str(SCRIPT))
     page.wait_for_timeout(1000)
     assert page.locator(".on-voie-rfi-estimate").count() == 0

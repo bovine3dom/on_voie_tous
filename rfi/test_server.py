@@ -32,8 +32,9 @@ def model_stub(monkeypatch):
     monkeypatch.setattr(server, "get_model", lambda station, directory: Model())
 
 
-def test_identity_string_labels_and_features(payload):
-    response = CLIENT.post("/rfi/predict", json=payload)
+@pytest.mark.parametrize("url", ["/predict?operator=rfi", "/rfi/predict"])
+def test_identity_string_labels_and_features(payload, url):
+    response = CLIENT.post(url, json=payload)
     assert response.status_code == 200
     result = response.json()["predictions"][0]
     assert result["trainId"] == payload["data"][0]["trainId"]
@@ -58,9 +59,23 @@ def test_official_and_out_of_scope_rows_are_not_predicted(payload, change, monke
     assert CLIENT.post("/rfi/predict", json=payload).json() == {"predictions": []}
 
 
-def test_abstention_empty_batches_missing_models_and_schema(payload, monkeypatch):
-    monkeypatch.setattr(server, "MIN_CONFIDENCE", 0.99)
-    assert CLIENT.post("/rfi/predict", json=payload).json() == {"predictions": []}
+def test_all_platforms_are_returned_even_below_the_old_cutoff(payload, monkeypatch):
+    class Model:
+        feature_names_ = FEATURES
+        classes_ = ["1", "2", "2EST", "20B", "Z"]
+
+        def predict_proba(self, df):
+            return np.tile([0.4, 0.35, 0.2, 0.04, 0.01], (df.height, 1))
+
+    monkeypatch.setattr(server, "get_model", lambda *args: Model())
+    result = CLIENT.post("/predict?operator=rfi", json=payload).json()["predictions"][0]
+    assert result["confidence"] == 0.4
+    assert [p["platform"] for p in result["probabilities"]] == Model.classes_
+    assert [p["prob"] for p in result["probabilities"]] == [0.4, 0.35, 0.2, 0.04, 0.01]
+    assert sum(p["prob"] for p in result["probabilities"]) == pytest.approx(1)
+
+
+def test_empty_batches_missing_models_and_schema(payload, monkeypatch):
     payload["data"] = []
     assert CLIENT.post("/rfi/predict", json=payload).json() == {"predictions": []}
     payload["data"] = [{"trainId": "x", "trainNumber": "1", "clock": "12:30", "destination": "ROMA"}]
@@ -72,12 +87,24 @@ def test_abstention_empty_batches_missing_models_and_schema(payload, monkeypatch
     assert CLIENT.post("/rfi/predict", json=payload).status_code == 409
 
 
-def test_aware_timestamps_and_station_validation(payload):
+@pytest.mark.parametrize("url", ["/predict?operator=rfi", "/rfi/predict"])
+def test_aware_timestamps_and_station_validation(payload, url):
     payload["ts"] = "2026-04-01T10:00:00"
-    assert CLIENT.post("/rfi/predict", json=payload).status_code == 422
+    assert CLIENT.post(url, json=payload).status_code == 422
     payload["ts"] += "Z"
     payload["station"] = "../1728"
-    assert CLIENT.post("/rfi/predict", json=payload).status_code == 422
+    assert CLIENT.post(url, json=payload).status_code == 422
+
+
+def test_shared_entrypoint_registers_both_operators():
+    from predict.server import app
+    assert app is server.app
+    paths = {route.path for route in app.routes}
+    assert {"/predict", "/rfi/predict", "/rfi/stations"} <= paths
+
+
+def test_unknown_operator_is_rejected(payload):
+    assert CLIENT.post("/predict?operator=db", json=payload).status_code == 422
 
 
 def test_midnight_and_dst_are_consistent_with_julia():

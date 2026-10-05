@@ -11,9 +11,6 @@ from predict.predict import app, get_model, HOST, PORT, TrainPrediction
 from .features import FEATURES, feature_frame, live_features, platform_known
 
 MODELS_DIR = Path(os.getenv("RFI_MODELS_DIR", Path(__file__).resolve().parent / "models"))
-MIN_CONFIDENCE = float(os.getenv("RFI_MIN_CONFIDENCE", "0.8"))
-if not 0 <= MIN_CONFIDENCE <= 1:
-    raise ValueError("RFI_MIN_CONFIDENCE must be between zero and one")
 
 
 class Train(BaseModel):
@@ -46,7 +43,7 @@ class Output(BaseModel):
 @app.get("/rfi/stations")
 def available_stations():
     return {"stations": sorted(path.stem for path in MODELS_DIR.glob("*.cbm") if path.stem.isdecimal()),
-            "minConfidence": MIN_CONFIDENCE, "leadMinutes": [15, 130]}
+            "leadMinutes": [15, 130]}
 
 
 @app.post("/rfi/predict", response_model=Output)
@@ -78,7 +75,7 @@ def rfi_predict(payload: Input):
              for platform, score in zip(model.classes_, scores)],
             key=lambda item: item["prob"], reverse=True,
         )
-        if not ranked or ranked[0]["prob"] < MIN_CONFIDENCE:
+        if not ranked:
             continue
         predictions.append(Prediction(trainId=train.trainId, clock=train.clock,
                                       platform=ranked[0]["platform"], confidence=ranked[0]["prob"],
