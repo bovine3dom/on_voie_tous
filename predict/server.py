@@ -1,7 +1,8 @@
 import uvicorn
 
-from .predict import HOST, PORT
-from rfi.server import app
+from .predict import app, HOST, PORT
+from rfi import server as _rfi
+from adif import server as _adif
 
 
 if __name__ == "__main__":

@@ -123,6 +123,19 @@ async def test_health():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("url", ["/stations", "/stations?operator=sncf"])
+async def test_station_catalog_defaults_to_sncf(tmp_path, monkeypatch, url):
+    module = importlib.import_module("predict.predict")
+    monkeypatch.setattr(module, "MODELS_DIR", str(tmp_path))
+    (tmp_path / "0087756056.cbm").touch()
+    (tmp_path / "not-a-station.cbm").touch()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        assert (await client.get(url)).json() == {"stations": ["0087756056"]}
+        assert (await client.get("/stations?operator=unknown")).status_code == 422
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("url", ["/predict", "/predict?operator=sncf"])
 async def test_predict(sample_payload, url):
     transport = ASGITransport(app=app)

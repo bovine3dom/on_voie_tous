@@ -119,6 +119,13 @@ def test_shared_entrypoint_registers_both_operators():
     assert {"/predict", "/rfi/predict", "/rfi/stations"} <= paths
 
 
+@pytest.mark.parametrize("url", ["/stations?operator=rfi", "/rfi/stations"])
+def test_station_catalog_uses_operator_selection_or_legacy_alias(tmp_path, monkeypatch, url):
+    monkeypatch.setattr(server, "MODELS_DIR", tmp_path)
+    (tmp_path / "1728.cbm").touch()
+    assert CLIENT.get(url).json() == {"stations": ["1728"], "leadMinutes": [15, 130]}
+
+
 def test_unknown_operator_is_rejected(payload):
     assert CLIENT.post("/predict?operator=db", json=payload).status_code == 422
 

@@ -2,13 +2,12 @@ import os
 import re
 from pathlib import Path
 
-import polars as pl
-from fastapi import HTTPException
 from pydantic import AwareDatetime, BaseModel, Field
 import uvicorn
 
 from predict.predict import app, get_model, HOST, PORT, TrainPrediction
-from .features import FEATURES, feature_frame, live_features
+from predict.board_api import board_predictions
+from .features import live_features
 
 MODELS_DIR = Path(os.getenv("RFI_MODELS_DIR", Path(__file__).resolve().parent / "models"))
 
@@ -64,23 +63,8 @@ def rfi_predict(payload: Input):
         rows.append(features)
     if not rows:
         return Output(predictions=[])
-    model = get_model(payload.station, MODELS_DIR)
-    if list(model.feature_names_) != FEATURES:
-        raise HTTPException(status_code=409, detail="Incompatible RFI feature schema")
-    probabilities = model.predict_proba(feature_frame(pl.DataFrame(rows)))
-    predictions = []
-    for train, scores in zip(selected, probabilities):
-        ranked = sorted(
-            [{"platform": str(platform), "prob": float(score)}
-             for platform, score in zip(model.classes_, scores)],
-            key=lambda item: item["prob"], reverse=True,
-        )
-        if not ranked:
-            continue
-        predictions.append(Prediction(trainId=train.trainId, clock=train.clock,
-                                      platform=ranked[0]["platform"], confidence=ranked[0]["prob"],
-                                      probabilities=ranked))
-    return Output(predictions=predictions)
+    identities = [{"trainId": train.trainId, "clock": train.clock} for train in selected]
+    return Output(predictions=board_predictions(get_model(payload.station, MODELS_DIR), rows, identities))
 
 
 if __name__ == "__main__":

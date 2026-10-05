@@ -7,7 +7,15 @@ from fastapi.exceptions import RequestValidationError
 from catboost import CatBoostClassifier
 from datetime import datetime
 from typing import Literal
+from pathlib import Path
 import uvicorn
+
+if __name__ == "__main__":
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from predict.server import app, HOST, PORT
+    uvicorn.run(app, host=HOST, port=PORT, access_log=False)
+    raise SystemExit
 
 app = FastAPI()
 
@@ -62,6 +70,7 @@ def get_model(station_id: str, models_dir=None) -> CatBoostClassifier:
 
 HOST = os.getenv("PREDICT_HOST", "0.0.0.0")
 PORT = int(os.getenv("PREDICT_PORT", "8000"))
+Operator = Literal["sncf", "rfi", "adif"]
 
 
 def normalise_sncf_data(raw_payload: dict, feature_names: list[str]) -> pl.DataFrame:
@@ -124,12 +133,26 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/predict", response_model=PredictionOutput, response_model_exclude_none=True)
-def predict(payload: PredictionInput, operator: Literal["sncf", "rfi"] = "sncf"):
+@app.get("/stations")
+def available_stations(operator: Operator = "sncf"):
     if operator == "rfi":
-        from rfi.server import Input, rfi_predict
+        from rfi.server import available_stations as catalog
+        return catalog()
+    if operator == "adif":
+        from adif.server import available_stations as catalog
+        return catalog()
+    return {"stations": sorted(path.stem for path in Path(MODELS_DIR).glob("*.cbm") if path.stem.isdecimal())}
+
+
+@app.post("/predict", response_model=PredictionOutput, response_model_exclude_none=True)
+def predict(payload: PredictionInput, operator: Operator = "sncf"):
+    if operator != "sncf":
+        if operator == "rfi":
+            from rfi.server import Input, rfi_predict as forecast
+        else:
+            from adif.server import Input, adif_predict as forecast
         try:
-            return rfi_predict(Input.model_validate(payload.model_dump()))
+            return forecast(Input.model_validate(payload.model_dump()))
         except ValidationError as error:
             raise RequestValidationError(error.errors()) from error
     payload_dict = payload.model_dump()
@@ -164,32 +187,3 @@ def predict(payload: PredictionInput, operator: Literal["sncf", "rfi"] = "sncf")
         )
 
     return PredictionOutput(predictions=predictions)
-
-
-if __name__ == "__main__":
-    import json
-
-    raw_payload = """
-{"ts":"2026-04-17T12:51:57.985068453+00:00","station":"0087756056","data":[{"TrafficDetailsUrl":"https://www.sncf-voyageurs.com/fr/voyagez-avec-nous/horaires-et-itineraires/recherche-de-train/detail-train/?numeroCirculation=881227&dateCirculation=2026-04-17&destinationCode=87756056","actualTime":"2026-04-17T13:33:00+00:00","alternativeMeans":null,"direction":"Departure","informationStatus":{"delay":null,"eventLevel":"Warning","trainStatus":"SUPPRESSION_TOTALE"},"isGL":false,"missionCode":null,"platform":{"backgroundColor":null,"isTrackactive":false,"track":"","trackGroupTitle":null,"trackGroupValue":null,"trackPosition":null},"presentation":{"colorCode":"#0749ff","textColorCode":"#FFFFFF"},"scheduledTime":"2026-04-17T12:03:00+00:00","shortTermInformations":[],"stationName":"Nice","statusModification":null,"stops":[],"traffic":{"destination":"Menton","eventLevel":"Warning","eventStatus":"SUPPRESSION","oldDestination":"","oldOrigin":"","origin":"Les Arcs - Draguignan"},"trainLine":null,"trainMode":"TRAIN","trainNumber":"881227","trainType":"ZOU !","uic":"0087756056"},{"TrafficDetailsUrl":"https://www.sncf-voyageurs.com/fr/voyagez-avec-nous/horaires-et-itineraires/recherche-de-train/detail-train/?numeroCirculation=86045&dateCirculation=2026-04-17&destinationCode=87756056","actualTime":"2026-04-17T12:54:00+00:00","alternativeMeans":null,"direction":"Departure","informationStatus":{"delay":null,"eventLevel":"Normal","trainStatus":"Ontime"},"isGL":false,"missionCode":null,"platform":{"backgroundColor":null,"isTrackactive":true,"track":"D","trackGroupTitle":null,"trackGroupValue":null,"trackPosition":null},"presentation":{"colorCode":"#0749ff","textColorCode":"#FFFFFF"},"scheduledTime":"2026-04-17T12:54:00+00:00","shortTermInformations":[],"stationName":"Nice","statusModification":null,"stops":[],"traffic":{"destination":"Ventimiglia","eventLevel":"Normal","eventStatus":"Ontime","oldDestination":"","oldOrigin":"","origin":"Grasse"},"trainLine":null,"trainMode":"TRAIN","trainNumber":"86045","trainType":"ZOU !","uic":"0087756056"}]}
-"""
-    payload = json.loads(raw_payload)
-    station_id = payload["station"]
-    model = get_model(station_id)
-    feature_names = list(model.feature_names_)
-    df2 = normalise_sncf_data(payload, feature_names).fill_null("MISSING")
-    df2 = df2[feature_names]
-    prediction = model.predict(df2)
-    probability = model.predict_proba(df2)
-    prob_df = pl.DataFrame(probability, schema=[str(c) for c in model.classes_])
-    df_with_probs = pl.concat([df2, prob_df], how="horizontal")
-    ranked_probs = pl.concat_list(
-        [
-            pl.struct(pl.col(str(cls)).alias("prob"), pl.lit(str(cls)).alias("class"))
-            for cls in model.classes_
-        ]
-    ).list.sort(descending=True)
-    pl.Config(tbl_rows=20)
-    dfpls = df_with_probs.with_columns(rankings=ranked_probs)
-    print(dfpls[["predictedDestination", "predictedPlatform", "rankings"]])
-
-    uvicorn.run(app, host=HOST, port=PORT, access_log=False)
