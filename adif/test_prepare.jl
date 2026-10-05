@@ -90,7 +90,9 @@ end
     @test sum(row.weight for row in rows) ≈ 1
     @test isempty(ADIF.rows(scan, Set(["99999"])))
     @test isempty(scan.availability.runs)
-    @test ADIF.rows(ADIF.merge!(ADIF.Scan(), scan), Set(["51003"]))["51003"] == rows
+    merged = ADIF.merge!(ADIF.Scan(), scan)
+    empty!(scan.runs)
+    @test ADIF.rows(merged, Set(["51003"]))["51003"] == rows
 end
 
 @testset "All observations, final changes, and reinstatement" begin

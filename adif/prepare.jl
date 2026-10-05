@@ -217,8 +217,9 @@ function rows(scan, selected)
         samples = Training.labelled_samples(state, received)
         isempty(samples) && continue
         local_at = localtime(scheduled)
+        departure_id, service_date = join((day, number, scheduled), "|"), string(day)
         for (horizon, sample) in samples
-            row = (station=id, departureId=join((day, number, scheduled), "|"), serviceDate=string(day),
+            row = (station=id, departureId=departure_id, serviceDate=service_date,
                    timestamp=sample.timestamp, scheduledTime=scheduled, labelTimestamp=received,
                    horizon=horizon, predictedPlatform=isempty(sample.platform) ? "MISSING" : sample.platform,
                    trainNumber=number, predictedDestination=sample.destination, carrier=sample.carrier,
@@ -331,7 +332,12 @@ function prepare(args=ARGS)
         end
     end
     scan = Scan()
-    foreach(chunk -> merge!(scan, chunk), chunks)
+    for chunk in chunks
+        merge!(scan, chunk)
+        empty!(chunk.runs)
+    end
+    empty!(chunks)
+    GC.gc()
     selected = reports(scan, files, joinpath(output, "results"), lead, minimum, rate, time()-started, hits[]; minimums)
     station_rows = rows(scan, selected)
     hive = joinpath(output, "hive")

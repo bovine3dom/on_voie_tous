@@ -143,8 +143,9 @@ function training_rows(runs)
         samples = labelled_samples(state, label_at)
         isempty(samples) && continue
         scheduled = Int64(scheduled_utc(day, clock, Dict{Tuple{Date,Int},Float64}()))
+        departure_id, service_date = join((day, token, clock), "|"), string(day)
         for (horizon, sample) in samples
-            row = (station=station, departureId=join((day, token, clock), "|"), serviceDate=string(day),
+            row = (station=station, departureId=departure_id, serviceDate=service_date,
                    timestamp=sample.timestamp, scheduledTime=scheduled, labelTimestamp=label_at,
                    horizon=horizon, predictedPlatform=platform_known(sample.platform) ? sample.platform : "MISSING",
                    trainNumber=sample.number, predictedDestination=sample.destination,
@@ -192,7 +193,12 @@ function wrangle(args=ARGS)
         end
     end
     runs = Departures()
-    foreach(chunk -> merge_departures!(runs, chunk), chunks)
+    for chunk in chunks
+        merge_departures!(runs, chunk)
+        empty!(chunk)
+    end
+    empty!(chunks)
+    GC.gc()
     rows = training_rows(runs)
     output = get(options, "--output", joinpath(@__DIR__, "hive"))
     mkpath(output)
