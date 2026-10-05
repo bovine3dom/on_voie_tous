@@ -146,14 +146,16 @@ A missing model or incompatible schema leaves the station board unchanged.
 
 ## Show estimates on RFI boards
 
-Install `src/rfi.user.js` as a userscript, or build the existing browser extension.
-The extension manifest now includes the RFI departure monitor.
-The SNCF userscript is unchanged.
+Install `src/content.user.js` as a userscript, or build the existing browser extension.
+The same script supports SNCF boards and RFI departure monitors.
+Remove the old separate `rfi.user.js` userscript if you installed it.
+The RFI adapter calls `/predict?operator=rfi`; the SNCF adapter calls `/predict`.
 
 The default server URL is `https://compute.olie.science/on_voie_tous`.
 It must run `predict.server` before RFI predictions are available.
 The previous `rfi.server` command remains compatible.
-Change `SERVER` in the userscript for another server.
+Change `PREDICT_SERVER_URL` in the userscript for another server.
+Alternatively, set `window.ON_VOIE_TOUS_SERVER` before the script starts.
 This work does not deploy a public server.
 
 The adapter requests only compact train fields.

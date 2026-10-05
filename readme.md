@@ -15,6 +15,17 @@ Add to Firefox on desktop or Android from the [Firefox Add-ons Store](https://ad
 
 For other browsers that support userscripts, if you have e.g. Tampermonkey installed, you can install the script directly by clicking this link: [content.user.js](https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js)
 
+## RFI departure boards
+
+The same userscript also supports [RFI departure monitors](https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor?placeId=1728&arrivals=False).
+Update or install `src/content.user.js`. Remove the old separate `rfi.user.js` userscript if you installed it.
+RFI estimates appear as `Stima` only where the official platform is blank.
+Published platforms remain unchanged. Use station monitors and announcements as the authority.
+
+The shared API must run `predict.server` with RFI models before estimates are available.
+See [the RFI instructions](rfi/readme.md) for training, server setup, and tests.
+These changes do not update the public server or the store extension.
+
 ## Disclaimer
 
 Sometimes the platform might change. You will notice when this happens because the train will not arrive at your platform.

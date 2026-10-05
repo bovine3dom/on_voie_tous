@@ -5,7 +5,7 @@ import shutil
 import pytest
 
 pw = pytest.importorskip("playwright.sync_api")
-SCRIPT = Path(__file__).resolve().parents[1] / "src/rfi.user.js"
+SCRIPT = Path(__file__).resolve().parents[1] / "src/content.user.js"
 URL = "https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor?placeId=1728&arrivals=False"
 
 
@@ -95,6 +95,60 @@ def test_a_failed_server_leaves_the_board_unchanged(page):
     page.wait_for_timeout(1000)
     assert page.locator(".on-voie-rfi-estimate").count() == 0
     assert page.locator('[data-test-id="22"] [id="RBinario"]').inner_text() == "20B"
+
+
+def test_document_start_and_duplicate_injection_keep_native_fetch(page):
+    calls = []
+    def respond(route):
+        calls.append(route.request.post_data_json)
+        route.fulfill(json=predictions())
+    page.route("**/predict?operator=rfi", respond)
+    page.add_init_script(
+        "window.startedWithoutBody = !document.body; window.nativeFetch = window.fetch;\n"
+        + SCRIPT.read_text())
+    page.goto(URL)
+    page.add_script_tag(path=str(SCRIPT))
+    pw.expect(page.locator(".on-voie-rfi-estimate")).to_have_count(2)
+    assert page.evaluate("window.startedWithoutBody && window.nativeFetch === window.fetch")
+    page.wait_for_timeout(800)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize("status", [200, 503])
+def test_sncf_uses_the_default_api_and_preserves_existing_display(page, wrapped, status):
+    calls, rfi_calls = [], []
+    trains = [
+        {"direction": "Departure", "uic": "0087756056", "trainNumber": "11",
+         "platform": {"track": "", "isTrackactive": False}},
+        {"direction": "Departure", "uic": "0087756056", "trainNumber": "22",
+         "platform": {"track": "C", "isTrackactive": True}},
+        {"direction": "Arrival", "uic": "0087756056", "trainNumber": "33",
+         "platform": {"track": "D", "isTrackactive": True}},
+    ]
+    payload = {"data": trains} if wrapped else trains
+    page.route("https://www.garesetconnexions.sncf/**", lambda route: route.fulfill(
+        content_type="text/html", body="<html><body></body></html>"))
+    page.route("**/schedule-table/test", lambda route: route.fulfill(json=payload))
+    page.route("**/rfi/stations", lambda route: rfi_calls.append(route.request.url) or route.abort())
+    def respond(route):
+        calls.append(route.request.post_data_json)
+        route.fulfill(status=status, json={"predictions": [
+            {"probabilities": [{"platform": str(i), "prob": 0.25} for i in range(1, 5)]},
+            {"probabilities": [{"platform": "C", "prob": 0.8}, {"platform": "D", "prob": 0.2}]},
+        ]})
+    page.route("**/predict", respond)  # No operator parameter: SNCF remains the default.
+    page.add_init_script(path=str(SCRIPT))
+    page.goto("https://www.garesetconnexions.sncf/fr/gares-services/nice/horaires")
+    result = page.evaluate("async () => (await fetch('/schedule-table/test')).json()")
+    displayed = result["data"] if wrapped else result
+    expected = ["1-4 (100%)", "C | C (80%), D (20%)", "D"] if status == 200 else ["", "C", "D"]
+    assert [train["platform"]["track"] for train in displayed] == expected
+    assert len(calls) == 1
+    assert calls[0]["station"] == "0087756056"
+    assert [train["trainNumber"] for train in calls[0]["data"]] == ["11", "22"]
+    assert rfi_calls == []
+    assert page.locator("#on-voie-tous-banner").count() == (status == 200)
 
 
 def test_arrivals_are_not_modified(page):
