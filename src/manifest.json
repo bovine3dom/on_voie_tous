@@ -8,7 +8,8 @@
     "64": "logo_64.png"
   },
   "host_permissions": [
-    "https://www.garesetconnexions.sncf/*"
+    "https://www.garesetconnexions.sncf/*",
+    "https://iechub.rfi.it/ArriviPartenze/*"
   ],
   "browser_specific_settings": {
     "gecko": {
@@ -21,6 +22,12 @@
       "matches": ["https://www.garesetconnexions.sncf/*"],
       "js": ["content.user.js"],
       "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://iechub.rfi.it/ArriviPartenze/*"],
+      "js": ["rfi.user.js"],
+      "run_at": "document_idle",
       "world": "MAIN"
     }
   ]

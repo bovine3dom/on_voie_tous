@@ -110,6 +110,32 @@ The default raw probability threshold is 0.8.
 Set `RFI_MIN_CONFIDENCE` between zero and one to change it.
 A missing model or incompatible schema leaves the station board unchanged.
 
+## Show estimates on RFI boards
+
+Install `src/rfi.user.js` as a userscript, or build the existing browser extension.
+The extension manifest now includes the RFI departure monitor.
+The SNCF userscript is unchanged.
+
+The default server URL is `https://compute.olie.science/on_voie_tous`.
+It must run `rfi.server` before RFI predictions are available.
+Change `SERVER` in the userscript for another server.
+This work does not deploy a public server.
+
+The adapter requests only compact train fields.
+It displays `Stima` beside blank official platform cells.
+It leaves official platforms unchanged and rejects stale responses.
+Server failures leave the board unchanged.
+Model scores are not calibrated probabilities of the physical platform.
+
+Run the browser tests in headless Chromium:
+
+```bash
+uv run --project predict --with playwright python -m pytest rfi/test_browser.py
+```
+
+The tests use the system `chromium` executable.
+Set `CHROMIUM_PATH` if it has another location.
+
 ## Results
 
 The audit read 751 archives, with observations from 30 March to 5 October 2026.
