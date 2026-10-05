@@ -34,6 +34,28 @@ Files are written to `rfi/results/`:
 
 Generated results and the local cache are excluded from Git.
 
+## Build training data
+
+Use the selected stations and complete archives:
+
+```bash
+julia --project=rfi --threads=16 rfi/wrangler.jl /path/to/datagrabber/data/rfi-iechub
+julia --project=rfi rfi/test_wrangler.jl
+```
+
+Julia writes `rfi/hive/station=ID/part0.arrow` and `rfi/hive/dataset.json`.
+Python can load one station at a time with the SNCF Arrow loader.
+Archive summaries are cached separately from the availability audit.
+
+Each departure supplies at most one blank-platform example at each saved lead time.
+Examples share a departure ID and a total training weight of one.
+The label is the last reported platform near the delay-adjusted departure.
+The accepted window is 15 minutes before departure through 10 minutes after departure.
+The final two distinct observations must agree.
+Cancelled trains, buses, conflicting timestamps, and departures without stable labels are excluded.
+A published early platform is never used as an input or a training example.
+This label is not proof of the physical platform used.
+
 ## Results
 
 The audit read 751 archives, with observations from 30 March to 5 October 2026.
