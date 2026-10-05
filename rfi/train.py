@@ -1,6 +1,8 @@
 import argparse
 import json
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import get_context
 from pathlib import Path
 
 import numpy as np
@@ -67,7 +69,7 @@ def metrics(model, train, evaluation, confidence=0.8):
     }
 
 
-def train_station(station, df, output, iterations=300, threads=4, minimum=50):
+def train_station(station, df, output, iterations=300, threads=4, minimum=50, refit=False):
     report = {"station_id": station, "rows": df.height,
               "departures": df["departureId"].n_unique()}
     split = chronological_split(df)
@@ -83,7 +85,7 @@ def train_station(station, df, output, iterations=300, threads=4, minimum=50):
         return report | {"status": "single_platform"}
     known_validation = validation.filter(pl.col("actualPlatform").is_in(classes))
     model = CatBoostClassifier(iterations=iterations, learning_rate=0.1, depth=6,
-                              loss_function="MultiClass", eval_metric="Accuracy",
+                              loss_function="MultiClass", eval_metric="MultiClass",
                               random_seed=1337, verbose=False, thread_count=threads,
                               allow_writing_files=False, has_time=True)
     kwargs = {"eval_set": pool(known_validation), "early_stopping_rounds": 40,
@@ -93,10 +95,26 @@ def train_station(station, df, output, iterations=300, threads=4, minimum=50):
                   features=FEATURES, classes=[str(x) for x in model.classes_],
                   trees=model.tree_count_, training_last_date=train["serviceDate"].max(),
                   validation=metrics(model, train, validation), test=metrics(model, train, test))
+    if refit:
+        params = model.get_params() | {"iterations": max(1, model.tree_count_)}
+        model = CatBoostClassifier(**params)
+        model.fit(pool(df.sort("timestamp")))
+    report["refitted"] = refit
+    report["model_last_date"] = df["serviceDate"].max() if refit else report["training_last_date"]
+    report["model_classes"] = [str(x) for x in model.classes_]
     output.mkdir(parents=True, exist_ok=True)
     temporary = output / f"{station}.cbm.tmp"
     model.save_model(str(temporary), format="cbm")
     temporary.replace(output / f"{station}.cbm")
+    return report
+
+
+def train_folder(job):
+    folder, output, iterations, threads, minimum, refit = job
+    station = extract_station_id(folder)
+    report = train_station(station, load_station_data(folder), output, iterations, threads, minimum, refit)
+    if report["status"] != "trained":
+        (output / f"{station}.cbm").unlink(missing_ok=True)
     return report
 
 
@@ -105,27 +123,31 @@ def main():
     parser.add_argument("--data", type=Path, default=ROOT / "hive")
     parser.add_argument("--models", type=Path, default=ROOT / "models")
     parser.add_argument("--stations", nargs="*", help="Optional station IDs")
-    parser.add_argument("--iterations", type=int, default=300)
+    parser.add_argument("--iterations", type=int, default=100)
     parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--min-trains", type=int, default=50)
+    parser.add_argument("--refit", action="store_true", help="Refit on all data after held-out evaluation")
     args = parser.parse_args()
-    if min(args.iterations, args.threads, args.min_trains) <= 0:
+    if min(args.iterations, args.threads, args.min_trains, args.workers) <= 0:
         parser.error("Training limits must be positive")
     dataset = json.loads((args.data / "dataset.json").read_text())
     if dataset["schema_version"] != SCHEMA_VERSION:
         parser.error("Unsupported dataset schema")
     args.models.mkdir(parents=True, exist_ok=True)
+    if not args.stations:
+        for path in args.models.glob("*.cbm"):
+            if not dataset["station_rows"].get(path.stem):
+                path.unlink()
+    jobs = [(folder, args.models, args.iterations, args.threads, args.min_trains, args.refit)
+            for folder in get_station_folders(str(args.data))
+            if dataset["station_rows"].get(extract_station_id(folder))
+            and (not args.stations or extract_station_id(folder) in args.stations)]
     reports = []
-    for folder in get_station_folders(str(args.data)):
-        station = extract_station_id(folder)
-        if not dataset["station_rows"].get(station) or (args.stations and station not in args.stations):
-            continue
-        df = load_station_data(folder)
-        report = train_station(station, df, args.models, args.iterations, args.threads, args.min_trains)
-        if report["status"] != "trained":
-            (args.models / f"{station}.cbm").unlink(missing_ok=True)
-        reports.append(report)
-        print(json.dumps(report), flush=True)
+    with ProcessPoolExecutor(max_workers=args.workers, mp_context=get_context("spawn")) as executor:
+        for report in executor.map(train_folder, jobs):
+            reports.append(report)
+            print(json.dumps(report), flush=True)
     summary = {"schema_version": SCHEMA_VERSION, "dataset": dataset, "stations": reports}
     temporary = args.models / "report.json.tmp"
     temporary.write_text(json.dumps(summary, indent=2) + "\n")

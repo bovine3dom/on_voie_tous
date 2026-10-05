@@ -69,19 +69,22 @@ uv run --project predict python -m pytest rfi/test_train.py
 The trainer reuses SNCF station discovery, Arrow loading, and the `.cbm` model format.
 It loads one station at a time. Models are saved in `rfi/models/`.
 Use `--stations 1728 2416` for a small run.
+Use `--workers=4 --threads=4` to train four stations at a time with four threads each.
 The default minimum is 50 distinct training departures and three service dates.
 Stations with only one training platform are skipped, as in the SNCF trainer.
 
 Dates are split into chronological training, validation, and test periods.
 All examples from a departure stay in one period.
 Targets that cross the next period boundary are excluded.
-Validation selects the tree count. Test data is not used for training.
+Validation log loss selects the tree count. Test data is not used for training.
 Unknown test platforms remain in the accuracy denominator.
 
 `rfi/models/report.json` records accuracy, coverage, and a historical-frequency baseline.
 The primary measurements use only blank-platform cases at the 30-minute lead time.
 The confidence scores are raw CatBoost probabilities, not calibrated accuracy estimates.
-Saved models use only the training period, so their held-out measurements remain valid.
+Saved models use only the training period by default.
+Use `--refit` to train the deployed model on all data after evaluation.
+The report keeps the earlier backtest measurements separate from the deployed model's date and classes.
 
 ## Serve predictions
 
@@ -96,6 +99,7 @@ The existing `/predict` route still serves SNCF.
 The `/rfi/predict` route uses separate RFI models and the shared model loader and response schema.
 The `/rfi/stations` route lists available models.
 Set `RFI_MODELS_DIR` to change the RFI model directory.
+Restart the server after training to clear its model cache.
 `PREDICT_HOST` and `PREDICT_PORT` retain their SNCF meanings.
 
 RFI inputs contain a UTC collection timestamp, a station ID, and compact train fields.

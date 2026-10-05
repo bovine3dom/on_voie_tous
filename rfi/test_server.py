@@ -2,7 +2,6 @@ from datetime import datetime
 import importlib
 
 import numpy as np
-import polars as pl
 import pytest
 from fastapi.testclient import TestClient
 from fastapi import HTTPException
