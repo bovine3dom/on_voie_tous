@@ -10,16 +10,16 @@ rsync -rlt --include="*.zst" --include='*/' --exclude='*' --info=progress2 the_s
 
 ## Train
 
-Station data must be in `sncf-hive/`.
+Use `--data` to select the station data directory.
 
 ```bash
-uv run model.py
+uv run model.py --data /mnt/sncf-hive --models models-v2
 ```
 
 ## Run the server
 
 ```bash
-uv run predict.py
+SNCF_MODELS_DIR=models-v2 uv run predict.py
 ```
 
 See [rfi/](../rfi/readme.md) for RFI data and models.

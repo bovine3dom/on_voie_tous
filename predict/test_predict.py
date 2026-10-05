@@ -152,7 +152,46 @@ async def test_predict(sample_payload, url):
             assert 0.99 <= total_prob <= 1.01
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url", ["/predict", "/predict?operator=sncf"])
+async def test_new_model_accepts_existing_payload(sample_payload, monkeypatch, url):
+    from predict.sncf_features import FEATURES as NEW_FEATURES, feature_frame
+    import polars as pl
+
+    legacy = normalise_sncf_data(sample_payload, [
+        "timestamp", "scheduledTime", "predictedTime", *NEW_FEATURES[:-5]
+    ])
+    legacy = legacy.with_columns(
+        pl.Series("scheduledDestination", [t["traffic"]["oldDestination"] for t in sample_payload["data"]]),
+        pl.Series("scheduledOrigin", [t["traffic"]["oldOrigin"] for t in sample_payload["data"]]),
+    )
+    expected = feature_frame(legacy)
+    assert normalise_sncf_data(sample_payload, NEW_FEATURES).equals(expected)
+    assert expected["scheduledMinute"].to_list() == [843, 894]
+
+    class Model:
+        feature_names_ = NEW_FEATURES
+        classes_ = ["1", "2"]
+
+        def predict(self, df):
+            assert df.equals(expected)
+            return np.array([["1"], ["1"]])
+
+        def predict_proba(self, df):
+            return np.tile([0.75, 0.25], (df.height, 1))
+
+    monkeypatch.setattr(importlib.import_module("predict.predict"), "get_model", lambda station: Model())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(url, json=sample_payload)
+    assert response.status_code == 200
+    assert set(response.json()["predictions"][0]) == {"platform", "confidence", "probabilities"}
+
+
 def test_normalise_sncf_data(sample_payload):
     df = normalise_sncf_data(sample_payload, FEATURES)
     assert df.shape[0] == 2
     assert "scheduledDestination" in df.columns
+    from datetime import datetime
+    assert df["scheduledTime"].to_list() == [
+        int(datetime.fromisoformat(t["scheduledTime"]).timestamp()) for t in sample_payload["data"]
+    ]

@@ -2,28 +2,16 @@
 import os
 import glob
 import polars as pl
-import numpy as np
 from catboost import Pool, CatBoostClassifier
 
+if __package__:
+    from .sncf_features import CAT_COLS, SCHEMA_VERSION, feature_frame
+else:
+    from sncf_features import CAT_COLS, SCHEMA_VERSION, feature_frame
+
 SNCF_HIVE_DIR = "sncf-hive"
-MODELS_DIR = "models"
+MODELS_DIR = "models-v2"
 TRAIN_MODELS = os.getenv("TRAIN_MODELS", "false").lower() == "true"
-
-CAT_COLS = [
-    "predictedPlatform",
-    "predictedTrackGroupValue",
-    "predictedTrackGroupTitle",
-    "predictedDestination",
-    "predictedOrigin",
-    "scheduledDestination",
-    "scheduledOrigin",
-    "trainLine",
-    "trainMode",
-    "trainNumber",
-    "trainType",
-    "trainStatus",
-]
-
 
 def get_station_folders(base_dir: str) -> list[str]:
     pattern = os.path.join(base_dir, "station=*")
@@ -45,13 +33,10 @@ def train_station_model(station_id: str, df: pl.DataFrame) -> CatBoostClassifier
     if len(unique_platforms) < 2:
         return None
 
-    cat_feature_names = [c for c in CAT_COLS if c in df.columns]
-    cat_feature_indices = [df.columns.index(c) for c in cat_feature_names]
-
     full_pool = Pool(
-        data=df.drop(["actualPlatform"]),
-        label=df.select(["actualPlatform"]),
-        cat_features=cat_feature_indices,
+        data=feature_frame(df),
+        label=df["actualPlatform"].to_list(),
+        cat_features=CAT_COLS,
     )
     params = {
         "iterations": 100,
@@ -61,6 +46,8 @@ def train_station_model(station_id: str, df: pl.DataFrame) -> CatBoostClassifier
         "eval_metric": "Accuracy",
         "verbose": False,
         "random_seed": 1337,
+        "metadata": {"sncf_schema_version": str(SCHEMA_VERSION)},
+        "allow_writing_files": False,
     }
     model = CatBoostClassifier(**params)
     model.fit(full_pool)
@@ -120,5 +107,8 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--max", type=int, default=None, help="Max models to train")
+    parser.add_argument("--data", default=SNCF_HIVE_DIR, help="Input station directory")
+    parser.add_argument("--models", default=MODELS_DIR, help="Output model directory")
     args = parser.parse_args()
+    SNCF_HIVE_DIR, MODELS_DIR = args.data, args.models
     train_all_models(max_to_train=args.max)

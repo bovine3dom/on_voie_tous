@@ -100,6 +100,11 @@ def normalise_sncf_data(raw_payload: dict, feature_names: list[str]) -> pl.DataF
                 pl.UInt32
             )
         )
+    from .sncf_features import TIME_FEATURES, feature_frame
+
+    if set(TIME_FEATURES).issubset(feature_names):
+        df = df.rename({"oldDestination": "scheduledDestination", "oldOrigin": "scheduledOrigin"}, strict=False)
+        return feature_frame(df).select(feature_names)
     df = df.with_columns(
         pl.lit("MISSING").alias(c) for c in feature_names if c not in df.columns
     )
