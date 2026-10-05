@@ -1,0 +1,10 @@
+[deps]
+CodecZstd = "6b39b394-51ab-5f42-8807-6242bab2b4c2"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+TimeZones = "f269a46b-ccf7-5d73-abea-4c690281aa53"
+
+[compat]
+CodecZstd = "0.8.7"
+JSON3 = "1"
+TimeZones = "1"
+julia = "1.10"
