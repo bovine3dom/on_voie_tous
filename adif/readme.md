@@ -81,9 +81,52 @@ Validation log loss selects the tree count. Test data is not used for training.
 `--refit` fits the final model on all data after the backtest.
 
 The report separates blank, published, and revised platforms at the 30-minute target.
+These measurements do not validate other lead times or the client's merged platform display.
 It also records a historical-frequency baseline and agreement with the early official platform.
 Raw CatBoost scores are not calibrated probabilities of the physical platform.
 Models need at least 50 training departures, three service dates, and multiple training platforms.
+
+## Results: 5 October 2026
+
+The run read 75 archives, with 661 stations in the feed.
+Only four service dates had usable departure observations: 7–8 July and 4–5 October 2026.
+The other archive dates do not establish continuous board coverage.
+
+| Split | Stations |
+| --- | ---: |
+| Needs predictions | 17 |
+| Skip | 53 |
+| Insufficient data | 591 |
+
+`adif/stations.txt` records the selected IDs. Detailed counts remain in `adif/results/stations.csv`.
+For example, missing platforms at 30 minutes were 96.8% at Madrid Chamartín and 91.8% at Barcelona Sants.
+Stations with insufficient observations are not confirmed skips.
+
+Julia produced 201,662 examples from 7,708 labelled departures for the selected stations.
+Fourteen stations produced models. Two lacked sufficient training data, and one had a single training platform.
+The models were refitted on all labelled data after evaluation.
+
+Training used the available July dates. Validation used 4 October, and testing used 5 October.
+At 30 minutes, the highest-score platform agreed with the later report as follows:
+
+| Cases | Departures | CatBoost | Historical frequency |
+| --- | ---: | ---: | ---: |
+| All | 2,005 | 59.1% | 43.7% |
+| Blank official platform | 1,433 | 51.8% | 41.1% |
+| Published official platform | 572 | 77.4% | 50.3% |
+| Published platform later changed | 16 | 18.8% | 18.8% |
+
+Copying the early official platform agreed with 97.2% of later published targets.
+CatBoost improved the blank-platform result, but was worse than copying published official platforms.
+Only four observed dates support these results. Use the models as experiments, not guarantees.
+Station monitors and announcements remain the authority.
+
+`adif/evaluation.csv` records the per-station backtest. Regenerate it after training:
+
+```bash
+uv run --project predict python -m predict.board_report adif/models/report.json adif/results/stations.csv adif/evaluation.csv
+cp adif/results/needs_predictions.txt adif/stations.txt
+```
 
 ## API
 
