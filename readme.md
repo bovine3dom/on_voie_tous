@@ -1,51 +1,45 @@
 # On Voie Tous
 
-On Voie Tous adds platform estimates to SNCF, RFI, and ADIF departure boards.
-Predictions require a trained model for the station.
+Adds platform predictions to SNCF Gares & Connexions train departures, such as for [Lyon Part Dieu here](https://www.garesetconnexions.sncf/fr/gares-services/lyon-part-dieu/horaires).
 
-## Install and use
+SNCF Gares & Connexions doesn't show train platforms until very late, approx 20 minutes before departure. However, they know the platform number well in advance and _USED TO_ even transmit some of this data to the browser. This Web Extension simply ~~rewrites~~ rewrote the flags on these hidden platform numbers, ensuring that the Gares & Connexions website ~~shows~~ showed them.
 
-Install the [Firefox extension](https://addons.mozilla.org/en-US/firefox/addon/on-voie-tous/),
-or load [src/content.user.js](src/content.user.js) in a userscript manager such as Tampermonkey.
-Reload the departure board after installation.
+However, SNCF Gares & Connexions got wind of this and stopped transmitting the platform numbers ahead of time. That's ok, c'est de bonne guerre. I am petty and stubborn enough to replace it with my own gradient-boosted tree model which you can find in predict/.
 
-- **SNCF:** Open a [Gares & Connexions departure board](https://www.garesetconnexions.sncf/fr/gares-services/lyon-part-dieu/horaires).
-- **RFI:** Open an [RFI departure board](https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor?placeId=1728&arrivals=False).
-- **ADIF:** Open [Pantallas estaciones ADIF](https://pantallas-estaciones.vercel.app/). Select a station and a departure board. Keep the platform column visible.
+![Nice Ville departures with platform predictions provided by On Voie Tous on the left and without on the right](promo.png)
 
-SNCF and RFI show `official | predicted`, or only predictions if the official platform is blank.
-ADIF estimates have an `Est.` label beside the platform value.
-Percentages are model scores, not measured accuracy. Always check station monitors and announcements.
 
-The script sends station and train data to `https://compute.olie.science/on_voie_tous` for predictions.
-You do not need to run a server to use this service.
+## Installation
 
-![SNCF departure board with and without platform estimates](promo.png)
+Add to Firefox on desktop or Android from the [Firefox Add-ons Store](https://addons.mozilla.org/en-US/firefox/addon/on-voie-tous/). Users have reported that it also works on the Orion browser for iPhone.
 
-## Run your own server
+For other browsers that support userscripts, if you have e.g. Tampermonkey installed, you can install the script directly by clicking this link: [content.user.js](https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js)
 
-See [server setup](predict/readme.md).
-For data preparation and training, see [SNCF](predict/readme.md#train-sncf-models), [RFI](rfi/readme.md), or [ADIF](adif/readme.md).
+The userscript also supports [RFI](rfi/readme.md) and [ADIF](adif/readme.md) departure boards.
+
+## Disclaimer
+
+Sometimes the platform might change. You will notice when this happens because the train will not arrive at your platform.
+
+The model is a horrifically complicated black box and will occasionally come up with all kinds of mad stuff. But that's part of the fun of it right? The SNCF's own claimed platform, when they eventually deign to provide it, is shown before the pipe, e.g. "C | C (80%)".
+
+The station you are looking at and a bunch of data about all the upcoming trains will be sent to a server I control. I pinky promise that I am not logging or storing any of this data, and I am specifically using POST rather than GET requests to make it harder for other people to log.
 
 ## Development
 
-Run these commands from the repository root.
-The extension scripts require Bun and Firefox.
+Run with
 
-```bash
-scripts/run.sh
-scripts/build.sh
-```
+`scripts/run.sh`
 
-To run the tests, install uv, Julia, and Chromium:
+Build for distribution with
 
-```bash
-uv sync --project predict --frozen
-uv run --project predict --with playwright python -m pytest
-julia --project=rfi -e 'using Pkg; Pkg.instantiate()'
-julia --project=rfi rfi/test_audit.jl
-julia --project=rfi rfi/test_wrangler.jl
-julia --project=rfi adif/test_prepare.jl
-```
+`scripts/build.sh`
 
-Browser tests run headless. Set `CHROMIUM_PATH` if Chromium is not on your executable search path.
+Testing on android:
+
+1. plug in your phone
+2. `adb devices`
+3. allow usb debugging on phone
+4. `scripts/run_android.sh [device id]`
+5. make sure firefox settings -> usb debugging is enabled
+6. test
