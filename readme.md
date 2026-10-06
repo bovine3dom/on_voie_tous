@@ -1,10 +1,10 @@
 # On Voie Tous
 
-Adds platform predictions to SNCF Gares & Connexions train departures, such as for [Lyon Part Dieu here](https://www.garesetconnexions.sncf/fr/gares-services/lyon-part-dieu/horaires).
+Adds platform predictions to SNCF Gares & Connexions train departures, such as for [Lyon Part Dieu here](https://www.garesetconnexions.sncf/fr/gares-services/lyon-part-dieu/horaires), and RFI departures such as for [Firenze SMN here](https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor?placeId=1325&arrivals=False). In theory, it would work for Adif too like for [Madrid Chamartin](https://pantallas-estaciones.vercel.app/~/?station=17000), but at the time of writing, Adif has blocked that page. But I guess you could type in your Spanish train details manually.
 
 SNCF Gares & Connexions doesn't show train platforms until very late, approx 20 minutes before departure. However, they know the platform number well in advance and _USED TO_ even transmit some of this data to the browser. This Web Extension simply ~~rewrites~~ rewrote the flags on these hidden platform numbers, ensuring that the Gares & Connexions website ~~shows~~ showed them.
 
-However, SNCF Gares & Connexions got wind of this and stopped transmitting the platform numbers ahead of time. That's ok, c'est de bonne guerre. I am petty and stubborn enough to replace it with my own gradient-boosted tree model which you can find in predict/.
+However, SNCF Gares & Connexions got wind of this and stopped transmitting the platform numbers ahead of time. That's ok, c'est de bonne guerre. I am petty and stubborn enough to replace it with my own gradient-boosted tree model which you can find in predict/. And since I had it working for the SNCF, I made it work for RFI (Italy) and Adif (Spain) too.
 
 ![Nice Ville departures with platform predictions provided by On Voie Tous on the left and without on the right](promo.png)
 
