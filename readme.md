@@ -8,6 +8,8 @@ However, SNCF Gares & Connexions got wind of this and stopped transmitting the p
 
 ![Nice Ville departures with platform predictions provided by On Voie Tous on the left and without on the right](promo.png)
 
+![Milano Centrale departures with platform predictions provided by On Voie Tous on the left and without on the right](promo_rfi.png)
+
 
 ## Installation
 
