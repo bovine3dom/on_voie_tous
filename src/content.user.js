@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         On Voie Tous
 // @namespace    http://tampermonkey.net/
-// @version      0.8
-// @description  Predicts platforms on SNCF and RFI departure boards
+// @version      0.9
+// @description  Predicts platforms on SNCF, RFI and ADIF departure boards
 // @author       bovine3dom
 // @match        https://www.garesetconnexions.sncf/*
 // @match        https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor*
+// @match        https://pantallas-estaciones.vercel.app/*
 // @run-at       document-start
 // @updateURL    https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js
 // @downloadURL  https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js
@@ -21,6 +22,10 @@
     const MIN_PROBABILITY = 0.1;
     const MAX_PLATFORMS = 2;
 
+    if (window.location.hostname === 'pantallas-estaciones.vercel.app') {
+        startAdif();
+        return;
+    }
     if (window.location.hostname === 'iechub.rfi.it') {
         startRfi();
         return;
@@ -37,7 +42,7 @@
 
         const banner = document.createElement('div');
         banner.id = 'on-voie-tous-banner';
-        banner.innerHTML = 'Platform predictions provided by <a href="https://github.com/bovine3dom/on_voie_tous">On Voie Tous</a>, an experimental extension unaffiliated with the SNCF or RFI.';
+        banner.innerHTML = 'Platform predictions provided by <a href="https://github.com/bovine3dom/on_voie_tous">On Voie Tous</a>, an experimental extension unaffiliated with SNCF, RFI or ADIF.';
         document.body.appendChild(banner);
     }
 
@@ -66,6 +71,16 @@
                 color: inherit !important;
                 text-decoration: underline !important;
                 cursor: pointer !important;
+            }
+            .on-voie-adif-estimate {
+                display: block !important;
+                white-space: normal !important;
+                overflow-wrap: anywhere !important;
+                font: 14px/1.2 sans-serif !important;
+                color: #fff !important;
+                background: #333 !important;
+                position: relative !important;
+                z-index: 1 !important;
             }
             tr[name="treno"] [id="RBinario"],
             tr[name="treno"] [id="RBinario"] div,
@@ -267,6 +282,102 @@
         }
         return response;
     };
+
+    function startAdif() {
+        if (window.__onVoieAdifActive) return;
+        window.__onVoieAdifActive = true;
+        const MARKER = 'on-voie-adif-estimate';
+        const clean = value => String(value ?? '').trim();
+        const joined = (items, key) => [...new Set((items || []).map(item => clean(item[key])))].sort().join('|');
+        let fingerprint = null;
+        let generation = 0;
+        let predictions = new Map();
+        let catalog = null;
+        let catalogRequest = null;
+        const observer = new MutationObserver(render);
+
+        function render() {
+            if (!document.body) return;
+            observer.disconnect();
+            try {
+                document.querySelectorAll('.' + MARKER).forEach(element => element.remove());
+                let displayed = false;
+                const rows = document.querySelectorAll('.adif-infotren-vista-departures .train-row[train-id]');
+                for (const row of rows) {
+                    const labels = predictions.get(row.getAttribute('train-id'));
+                    const platform = row.querySelector('.train-platform');
+                    if (!labels || !platform) continue;
+                    const estimate = document.createElement('span');
+                    estimate.className = MARKER;
+                    estimate.textContent = 'Est. ' + labels;
+                    estimate.title = 'Estimación experimental. Las puntuaciones no son probabilidades calibradas. Consulte los paneles y anuncios de ADIF.';
+                    platform.appendChild(estimate);
+                    displayed = true;
+                }
+                if (displayed) showBanner();
+            } finally {
+                observer.observe(document.body, {childList: true, subtree: true, characterData: true});
+            }
+        }
+
+        window.addEventListener('message', async event => {
+            if (event.origin !== window.location.origin || event.source !== window.parent ||
+                event.data?.target !== 'grvta.setData') return;
+            let board;
+            try { board = JSON.parse(event.data.objData); } catch { return; }
+            const station = clean(board?.station_settings?.code);
+            if (!/^\d{1,12}$/.test(station) || !Array.isArray(board.trains)) return;
+            const entries = board.trains.flatMap(train => {
+                const trainNumber = clean(train.technical_number_planif_out) || clean(train.technical_number_planif);
+                const scheduledTime = clean(train.departure_time);
+                const id = clean(train.id);
+                if (!id || !trainNumber || !['origin', 'intermediate'].includes(train.class_stop) ||
+                    !/(?:Z|[+-]\d{2}:\d{2})$/.test(scheduledTime) || !Number.isFinite(Date.parse(scheduledTime))) return [];
+                const status = clean(train.status) + ' ' + clean(train.observation);
+                const carrier = clean(train.company);
+                const category = joined(train.commercial_id, 'product');
+                const platform = clean(train.platform);
+                if (/cancel|suprimid|anulad/i.test(status) || train.traffic_type === 'B' ||
+                    /^BUS/i.test(trainNumber) || platform.toUpperCase() === 'BUS' ||
+                    /\bbus|autobus|pullman|autoserv|autocors/i.test(carrier + ' ' + category)) return [];
+                const delay = clean(train.delay_out ?? 0);
+                return [{id, data: {
+                    trainId: JSON.stringify([station, id, trainNumber, scheduledTime]),
+                    trainNumber, scheduledTime, stopType: train.class_stop,
+                    destination: joined(train.destinations, 'code'), carrier, category,
+                    trafficType: clean(train.traffic_type), status, platform,
+                    delayMinutes: /^[+-]?\d+$/.test(delay) ? Number(delay) : -1,
+                }}];
+            });
+            const currentFingerprint = JSON.stringify([station, entries]);
+            if (currentFingerprint === fingerprint) return;
+            fingerprint = currentFingerprint;
+            const version = ++generation;
+            predictions = new Map();
+            render();
+            if (!entries.length) return;
+            if (!catalog) {
+                catalogRequest ||= request('/stations?operator=adif');
+                const result = await catalogRequest;
+                catalogRequest = null;
+                if (Array.isArray(result?.stations)) catalog = result.stations;
+            }
+            if (version !== generation) return;
+            if (!catalog) { fingerprint = null; return; }
+            if (!catalog.includes(station)) return;
+            const result = await request('/predict?operator=adif', {
+                ts: new Date().toISOString(), station, data: entries.map(entry => entry.data),
+            });
+            if (version !== generation) return;
+            if (!Array.isArray(result?.predictions)) { fingerprint = null; return; }
+            const byIdentity = new Map(result.predictions.map(pred => [pred.trainId, pred]));
+            predictions = new Map(entries.map(entry => [entry.id,
+                formatPlatforms(byIdentity.get(entry.data.trainId)?.probabilities || [])]));
+            render();
+        });
+        if (document.body) render();
+        else document.addEventListener('DOMContentLoaded', render, {once: true});
+    }
 
     function startRfi() {
         const MARKER = 'on-voie-rfi-estimate';

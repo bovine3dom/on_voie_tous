@@ -21,10 +21,12 @@ Use [the userscript](src/content.user.js) for [RFI departure boards](https://iec
 Platforms appear as `official | predicted`.
 See [rfi/](rfi/readme.md) to train models or run the server.
 
-## ADIF models
+## ADIF departure boards
 
-See [adif/](adif/readme.md) to prepare data, train models, and serve predictions.
-There is no ADIF browser adapter yet.
+Use [the userscript](src/content.user.js) on [Pantallas estaciones ADIF](https://pantallas-estaciones.vercel.app/).
+Select a station and a departure board. Keep the platform column visible.
+Estimates have an `Est.` label. Official platforms stay unchanged.
+See [adif/](adif/readme.md) for setup and tests.
 
 ## Disclaimer
 

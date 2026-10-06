@@ -1,7 +1,8 @@
 # ADIF platform predictions
 
 Julia prepares training data for CatBoost.
-The shared server provides predictions. There is no ADIF browser adapter yet.
+The shared server provides predictions.
+The userscript adds estimates to departure boards on [Pantallas estaciones ADIF](https://pantallas-estaciones.vercel.app/).
 Model scores are not measured accuracy. Check station monitors and announcements.
 
 Run the commands below from the repository root.
@@ -63,9 +64,21 @@ The current official platform is a model input.
 Responses contain train identities and every platform score.
 Predictions have no departure-time limit. Cancelled trains, buses, and arrivals are excluded.
 
+## Browser use
+
+Install [the userscript](../src/content.user.js), then reload the site.
+Select a station and a departure board. Keep the platform column visible.
+The script runs inside the embedded display and reads its board messages.
+It sends departure data to the prediction server only for stations with models.
+It does not change the source data, official platforms, or platform filters.
+Estimates have an `Est.` label. Percentages are model scores, not measured accuracy.
+Arrivals, buses, and cancelled trains do not receive estimates.
+A changed board removes old estimates before it requests new ones.
+
 ## Tests
 
 ```bash
 julia --project=rfi adif/test_prepare.jl
 uv run --project predict python -m pytest adif/test_train.py adif/test_server.py
+uv run --project predict --with playwright python -m pytest adif/test_browser.py rfi/test_browser.py
 ```
