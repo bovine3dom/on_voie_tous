@@ -29,6 +29,33 @@ Models use observations at all lead times to predict the last known platform. Re
 It has separate results for blank, published, and changed platforms.
 Training still runs if a chronological evaluation is unavailable; no accuracy estimate is recorded.
 
+## Optional training-row compaction
+
+The shared RFI and ADIF trainer accepts `--compact-seconds N`.
+The default is `0`, which keeps all training rows.
+A positive value combines repeated feature states within each departure and collection-time bucket.
+It keeps the first source row and adds the source weights.
+It keeps each departure, target platform, and distinct feature state, except for changes in `leadMinutes`.
+Thus, this option can change model results and confidence scores.
+
+Compaction occurs after the chronological split.
+It applies only to training, early-stopping, and full-refit inputs.
+Evaluation observations, frequency-baseline inputs, raw archives, labels, and audits stay unchanged.
+The report gives source and fit row counts, bucket size, and the maximum departure-weight error.
+Training stops if this error exceeds `1e-9`.
+Each worker also saves its report in `station-reports/<ID>.json` after it saves the model.
+
+Use a new model directory for each experiment. For example:
+
+```bash
+uv run --project predict python -m adif.train --stations 51003 --workers=1 --threads=4 \
+  --compact-seconds=60 --refit --models=adif/models-compaction-test
+```
+
+Do not use a live model directory for an experiment.
+Compare accuracy, confidence coverage, and accepted-prediction accuracy before deployment.
+The earlier one-station test does not establish a safe default for other stations.
+
 ## Run the server
 
 ```bash
@@ -71,7 +98,7 @@ Each archive decoder can use more than 256 MiB of memory. Use fewer threads on a
 ```bash
 julia --project=rfi rfi/test_audit.jl
 julia --project=rfi rfi/test_wrangler.jl
-uv run --project predict python -m pytest rfi/test_train.py rfi/test_server.py \
+uv run --project predict python -m pytest rfi/test_train.py rfi/test_compaction.py rfi/test_server.py \
   predict/test_predict.py predict/test_startup.py
 uv run --project predict --with playwright python -m pytest rfi/test_browser.py
 ```

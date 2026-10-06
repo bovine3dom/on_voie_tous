@@ -31,6 +31,28 @@ def chronological_split(df: pl.DataFrame):
     return train, validation, test
 
 
+def compact_rows(df: pl.DataFrame, seconds: int):
+    if seconds < 0:
+        raise ValueError("Compaction seconds must be nonnegative")
+    report = {"bucket_seconds": seconds, "raw_rows": df.height, "fit_rows": df.height}
+    if not seconds or df.is_empty():
+        return df, report
+    keys = ["departureId", "actualPlatform", "_bucket"] + [name for name in FEATURES if name != "leadMinutes"]
+    compacted = (df.sort("timestamp", maintain_order=True)
+                 .with_columns((pl.col("timestamp") // seconds).alias("_bucket"))
+                 .group_by(keys, maintain_order=True)
+                 .agg(pl.col("weight").sum(), pl.exclude(*keys, "weight").first())
+                 .select(df.columns))
+    before = df.group_by("departureId").agg(pl.col("weight").sum()).sort("departureId")
+    after = compacted.group_by("departureId").agg(pl.col("weight").sum()).sort("departureId")
+    error = float((before["weight"] - after["weight"]).abs().max())
+    if not before["departureId"].equals(after["departureId"]) or not np.isfinite(error) or error > 1e-9:
+        raise ValueError("Compaction changed departure weights")
+    report.update(fit_rows=compacted.height, departures=before.height,
+                  max_departure_weight_error=error)
+    return compacted, report
+
+
 def pool(df: pl.DataFrame) -> Pool:
     return Pool(feature_frame(df), label=df["actualPlatform"].to_list(),
                 cat_features=CAT_COLS, weight=df["weight"].to_list())
@@ -103,9 +125,16 @@ def fit_model(df, iterations, threads, validation=None):
     return model
 
 
-def train_station(station, df, output, iterations=100, threads=4, refit=False):
+def train_station(station, df, output, iterations=100, threads=4, refit=False, compact_seconds=0):
+    if compact_seconds < 0:
+        raise ValueError("Compaction seconds must be nonnegative")
     report = {"station_id": station, "rows": df.height,
-              "departures": df["departureId"].n_unique()}
+              "departures": df["departureId"].n_unique(), "compaction": {}}
+
+    def fit_input(part, name):
+        compacted, details = compact_rows(part, compact_seconds)
+        report["compaction"][name] = details
+        return compacted
     if df.is_empty():
         return report | {"status": "no_labels"}
     split = chronological_split(df)
@@ -116,7 +145,8 @@ def train_station(station, df, output, iterations=100, threads=4, refit=False):
     model = None
     if available:
         train, validation, test = split
-        model = fit_model(train, iterations, threads, validation)
+        model = fit_model(fit_input(train, "train"), iterations, threads,
+                          fit_input(validation, "early_stopping"))
         report.update(backtest_status="available", classes=[str(x) for x in model.classes_],
                       training_last_date=train["serviceDate"].max(),
                       validation=metrics(model, train, validation), test=metrics(model, train, test))
@@ -124,7 +154,8 @@ def train_station(station, df, output, iterations=100, threads=4, refit=False):
         report.update(backtest_status="unavailable", backtest_reason="insufficient_chronological_periods")
     fitted = df if refit or not available else split[0]
     if refit or not available:
-        model = fit_model(fitted, (model.tree_count_ or iterations) if model is not None else iterations, threads)
+        model = fit_model(fit_input(fitted, "full"),
+                          (model.tree_count_ or iterations) if model is not None else iterations, threads)
     report.update(status="trained", schema_version=SCHEMA_VERSION, features=FEATURES,
                   trees=model.tree_count_, model_kind="platform_prior" if isinstance(model, PlatformPrior) else "catboost",
                   refitted=refit and available, model_last_date=fitted["serviceDate"].max(),
@@ -141,12 +172,17 @@ def train_station(station, df, output, iterations=100, threads=4, refit=False):
 
 
 def train_folder(job):
-    folder, output, iterations, threads, refit = job
+    folder, output, iterations, threads, refit, compact_seconds = job
     station = extract_station_id(folder)
-    report = train_station(station, load_station_data(folder), output, iterations, threads, refit)
+    report = train_station(station, load_station_data(folder), output, iterations, threads, refit, compact_seconds)
     if report["status"] != "trained":
         for suffix in MODEL_SUFFIXES:
             (output / f"{station}{suffix}").unlink(missing_ok=True)
+    reports = output / "station-reports"
+    reports.mkdir(parents=True, exist_ok=True)
+    temporary = reports / f"{station}.json.tmp"
+    temporary.write_text(json.dumps(report, indent=2) + "\n")
+    temporary.replace(reports / f"{station}.json")
     return report
 
 
@@ -159,7 +195,11 @@ def main(root=ROOT):
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--refit", action="store_true", help="Refit on all data after held-out evaluation")
+    parser.add_argument("--compact-seconds", type=int, default=0,
+                        help="Experimental fit-row time buckets; 0 keeps all rows (default)")
     args = parser.parse_args()
+    if args.compact_seconds < 0:
+        parser.error("Compaction seconds must be nonnegative")
     if min(args.iterations, args.threads, args.workers) <= 0:
         parser.error("Training limits must be positive")
     dataset = json.loads((args.data / "dataset.json").read_text())
@@ -171,7 +211,7 @@ def main(root=ROOT):
             for path in args.models.glob("*" + suffix):
                 if not dataset["station_rows"].get(path.name.removesuffix(suffix)):
                     path.unlink()
-    jobs = [(folder, args.models, args.iterations, args.threads, args.refit)
+    jobs = [(folder, args.models, args.iterations, args.threads, args.refit, args.compact_seconds)
             for folder in get_station_folders(str(args.data))
             if dataset["station_rows"].get(extract_station_id(folder))
             and (not args.stations or extract_station_id(folder) in args.stations)]

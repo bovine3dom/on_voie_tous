@@ -29,6 +29,9 @@ Models use observations at all lead times to predict the last known platform. Re
 It has separate results for blank, published, and changed platforms.
 Training still runs if a chronological evaluation is unavailable; no accuracy estimate is recorded.
 
+The shared trainer also has [optional training-row compaction](../rfi/readme.md#optional-training-row-compaction).
+It is disabled by default. Use a new model directory for each experiment.
+
 ## Select stations
 
 `prepare.jl` selects stations before it writes training data.

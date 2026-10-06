@@ -147,7 +147,8 @@ def test_empty_evaluation_period_does_not_block_training(tmp_path):
     assert report["model_departures"] == 30
 
 
-def test_parallel_cli_and_stale_model_cleanup(tmp_path):
+@pytest.mark.parametrize("seconds", [0, 60])
+def test_parallel_cli_and_stale_model_cleanup(tmp_path, seconds):
     hive, models = tmp_path / "hive", tmp_path / "models"
     hive.mkdir()
     models.mkdir()
@@ -159,10 +160,15 @@ def test_parallel_cli_and_stale_model_cleanup(tmp_path):
         data().write_ipc(folder / "part0.arrow")
     (hive / "dataset.json").write_text(json.dumps({"schema_version": SCHEMA_VERSION, "station_rows": {"1": 240, "2": 240}}))
     subprocess.run([sys.executable, "-m", "rfi.train", "--data", str(hive), "--models", str(models),
-                    "--iterations=5", "--threads=1", "--workers=2", "--refit"],
+                    "--iterations=5", "--threads=1", "--workers=2", "--refit", f"--compact-seconds={seconds}"],
                    cwd=Path(__file__).resolve().parents[1], check=True, capture_output=True, timeout=45)
     assert {path.stem for path in models.glob("*.cbm")} == {"1", "2"}
-    assert len(json.loads((models / "report.json").read_text())["stations"]) == 2
+    reports = json.loads((models / "report.json").read_text())["stations"]
+    assert len(reports) == 2
+    for report in reports:
+        assert report["compaction"]["full"]["bucket_seconds"] == seconds
+        saved = models / "station-reports" / (report["station_id"] + ".json")
+        assert json.loads(saved.read_text()) == report
     assert not (models / "999.prior.json").exists()
 
 
