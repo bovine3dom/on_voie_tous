@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         On Voie Tous
 // @namespace    http://tampermonkey.net/
-// @version      0.9
+// @version      0.10
 // @description  Predicts platforms on SNCF, RFI and ADIF departure boards
 // @author       bovine3dom
 // @match        https://www.garesetconnexions.sncf/*
@@ -31,6 +31,8 @@
         return;
     }
     if (window.location.hostname !== 'www.garesetconnexions.sncf') return;
+    if (window.__onVoieSncfActive) return;
+    window.__onVoieSncfActive = true;
 
     function showBanner() {
         if (!document.body) {
@@ -247,13 +249,12 @@
             if (!prediction) continue;
 
             const originalTrack = train.platform.track;
-            const formattedPlatforms = formatPlatforms(prediction.probabilities);
-            if (formattedPlatforms) {
-                if (originalTrack && originalTrack !== formattedPlatforms) {
-                    train.platform.track = `${originalTrack} | ${formattedPlatforms}`;
-                } else {
-                    train.platform.track = formattedPlatforms;
-                }
+            const announced = prediction.probabilities.find(p => p.platform === originalTrack);
+            const official = announced ? `${originalTrack} (${Math.round(announced.prob * 100)}%)` : originalTrack;
+            const alternatives = formatPlatforms(prediction.probabilities.filter(p => p.platform !== originalTrack));
+            const display = [official, alternatives].filter(Boolean).join(' | ');
+            if (display) {
+                train.platform.track = display;
                 train.platform.isTrackactive = true;
             }
         }

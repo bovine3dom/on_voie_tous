@@ -169,7 +169,8 @@ def test_document_start_and_duplicate_injection_keep_native_fetch(page):
 
 @pytest.mark.parametrize("wrapped", [False, True])
 @pytest.mark.parametrize("status", [200, 503])
-def test_sncf_uses_the_default_api_and_preserves_existing_display(page, wrapped, status):
+@pytest.mark.parametrize("injections", [1, 2])
+def test_sncf_uses_the_default_api_and_preserves_existing_display(page, wrapped, status, injections):
     calls, rfi_calls = [], []
     trains = [
         {"direction": "Departure", "uic": "0087756056", "trainNumber": "11",
@@ -193,15 +194,42 @@ def test_sncf_uses_the_default_api_and_preserves_existing_display(page, wrapped,
     page.route("**/predict", respond)  # No operator parameter: SNCF remains the default.
     page.add_init_script(path=str(SCRIPT))
     page.goto("https://www.garesetconnexions.sncf/fr/gares-services/nice/horaires")
+    for _ in range(injections - 1):
+        page.add_script_tag(path=str(SCRIPT))
     result = page.evaluate("async () => (await fetch('/schedule-table/test')).json()")
     displayed = result["data"] if wrapped else result
-    expected = ["1-4 (100%)", "C | C (80%), D (20%)", "D"] if status == 200 else ["", "C", "D"]
+    expected = ["1-4 (100%)", "C (80%) | D (20%)", "D"] if status == 200 else ["", "C", "D"]
     assert [train["platform"]["track"] for train in displayed] == expected
     assert len(calls) == 1
     assert calls[0]["station"] == "0087756056"
     assert [train["trainNumber"] for train in calls[0]["data"]] == ["11", "22"]
     assert rfi_calls == []
     assert page.locator("#on-voie-tous-banner").count() == (status == 200)
+
+
+@pytest.mark.parametrize("track,probabilities,expected", [
+    ("C", [("C", 1)], "C (100%)"),
+    ("C", [("C", 0.03), ("D", 0.97)], "C (3%) | D (97%)"),
+    ("C", [("D", 0.9)], "C | D (90%)"),
+    ("C", [], "C"),
+    ("2", [("1", 0.2), ("2", 0.2), ("3", 0.2), ("4", 0.4)], "2 (20%) | 4 (40%), 1 (20%)"),
+])
+def test_sncf_announced_platform_is_separate_from_alternatives(page, track, probabilities, expected):
+    page.route("https://www.garesetconnexions.sncf/**", lambda route: route.fulfill(
+        content_type="text/html", body="<html><body></body></html>"))
+    page.route("**/schedule-table/test", lambda route: route.fulfill(json=[{
+        "direction": "Departure", "uic": "0087756056",
+        "platform": {"track": track, "isTrackactive": True},
+    }]))
+    page.route("**/predict", lambda route: route.fulfill(json={"predictions": [{
+        "probabilities": [{"platform": platform, "prob": prob} for platform, prob in probabilities],
+    }]}))
+    page.add_init_script(path=str(SCRIPT))
+    page.goto("https://www.garesetconnexions.sncf/fr/gares-services/nice/horaires")
+    for _ in range(2):
+        result = page.evaluate("async () => (await fetch('/schedule-table/test')).json()")
+        assert result[0]["platform"]["track"] == expected
+        assert result[0]["platform"]["track"].count("|") <= 1
 
 
 def test_official_platform_and_predictions_share_a_wrapping_line(page):
