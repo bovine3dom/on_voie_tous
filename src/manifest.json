@@ -1,8 +1,12 @@
 {
   "manifest_version": 3,
   "name": "On Voie Tous",
-  "version": "0.11",
+  "version": "0.12",
   "permissions": [],
+  "background": {
+    "scripts": ["background.js"],
+    "service_worker": "background.js"
+  },
   "icons": {
     "32": "logo_32.png",
     "64": "logo_64.png"
@@ -10,7 +14,9 @@
   "host_permissions": [
     "https://www.garesetconnexions.sncf/*",
     "https://iechub.rfi.it/ArriviPartenze/*",
-    "https://pantallas-estaciones.vercel.app/*"
+    "https://pantallas-estaciones.vercel.app/*",
+    "https://www.adif.es/w/*",
+    "https://compute.olie.science/*"
   ],
   "browser_specific_settings": {
     "gecko": {
@@ -20,10 +26,16 @@
   },
   "content_scripts": [
     {
+      "matches": ["https://www.adif.es/w/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_start"
+    },
+    {
       "matches": [
         "https://www.garesetconnexions.sncf/*",
         "https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor*",
-        "https://pantallas-estaciones.vercel.app/*"
+        "https://pantallas-estaciones.vercel.app/*",
+        "https://www.adif.es/w/*"
       ],
       "js": ["content.user.js"],
       "run_at": "document_start",

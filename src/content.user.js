@@ -1,17 +1,21 @@
 // ==UserScript==
 // @name         On Voie Tous
 // @namespace    http://tampermonkey.net/
-// @version      0.11
+// @version      0.12
 // @description  Predicts platforms on SNCF, RFI and ADIF departure boards
 // @author       bovine3dom
 // @match        https://www.garesetconnexions.sncf/*
 // @match        https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor*
 // @match        https://pantallas-estaciones.vercel.app/*
+// @match        https://www.adif.es/w/*
 // @run-at       document-start
 // @updateURL    https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js
 // @downloadURL  https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js
 // @supportURL   https://github.com/bovine3dom/on_voie_tous/issues/
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      compute.olie.science
+// @sandbox      raw
+// @inject-into  page
 // ==/UserScript==
 
 (function() {
@@ -22,6 +26,10 @@
     const MIN_PROBABILITY = 0.1;
     const MAX_PLATFORMS = 2;
 
+    if (window.location.hostname === 'www.adif.es') {
+        startAdifWeb();
+        return;
+    }
     if (window.location.hostname === 'pantallas-estaciones.vercel.app') {
         startAdif();
         return;
@@ -162,7 +170,43 @@
             .map(p => `${p.platform} (${Math.round(p.prob * 100)}%)`).join(', ');
     }
 
+    function privilegedRequest(path, payload) {
+        return new Promise(resolve => {
+            if (typeof GM_xmlhttpRequest === 'function') {
+                GM_xmlhttpRequest({
+                    url: 'https://compute.olie.science/on_voie_tous' + path,
+                    method: payload ? 'POST' : 'GET',
+                    headers: {'Content-Type': 'application/json'},
+                    data: payload ? JSON.stringify(payload) : undefined,
+                    anonymous: true,
+                    timeout: PREDICT_TIMEOUT_MS,
+                    onload: response => {
+                        try { resolve(response.status === 200 ? JSON.parse(response.responseText) : null); }
+                        catch { resolve(null); }
+                    },
+                    onerror: () => resolve(null),
+                    ontimeout: () => resolve(null),
+                });
+                return;
+            }
+            const id = crypto.randomUUID();
+            const finish = data => {
+                clearTimeout(timeout);
+                window.removeEventListener('message', receive);
+                resolve(data);
+            };
+            const receive = event => {
+                if (event.source === window && event.origin === location.origin &&
+                    event.data?.type === 'on-voie-response' && event.data.id === id) finish(event.data.result);
+            };
+            const timeout = setTimeout(() => finish(null), PREDICT_TIMEOUT_MS + 500);
+            window.addEventListener('message', receive);
+            window.postMessage({type: 'on-voie-request', id, path, payload}, location.origin);
+        });
+    }
+
     async function request(path, payload) {
+        if (location.hostname === 'www.adif.es') return privilegedRequest(path, payload);
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), PREDICT_TIMEOUT_MS);
         try {
@@ -285,6 +329,143 @@
         return response;
     };
 
+    function appendAdifEstimate(platform, labels) {
+        const estimate = document.createElement('span');
+        estimate.className = 'on-voie-adif-estimate';
+        estimate.textContent = 'Est. ' + labels;
+        estimate.title = 'Estimación experimental. Las puntuaciones no son probabilidades calibradas. Consulte los paneles y anuncios de ADIF.';
+        platform.appendChild(estimate);
+    }
+
+    function startAdifWeb() {
+        const station = location.pathname.match(/^\/w\/(\d{5})-/)?.[1];
+        if (!station || window.__onVoieAdifWebActive) return;
+        window.__onVoieAdifWebActive = true;
+        const PREFIX = '_servicios_estacion_ServiciosEstacionPortlet_';
+        const MARKER = 'on-voie-adif-estimate';
+        const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim();
+        const decoded = value => {
+            const text = document.createElement('textarea');
+            text.innerHTML = String(value ?? '');
+            return clean(text.value);
+        };
+        const pages = new Map();
+        const requests = new WeakMap();
+        let generation = 0;
+        let traffic = null;
+        let catalogRequest = null;
+        const observer = new MutationObserver(render);
+
+        function render() {
+            if (!document.body) return;
+            observer.disconnect();
+            try {
+                document.querySelectorAll('.' + MARKER).forEach(node => node.remove());
+                const selected = document.querySelector('input[name="trafficType"]:checked')?.value;
+                if (selected && selected !== traffic) return;
+                const rows = document.querySelectorAll('#horas-trenes-estacion-salidas tr.horario-row');
+                let offset = 0;
+                let displayed = false;
+                for (let number = 0; pages.has(number); number++) {
+                    const page = pages.get(number);
+                    if (Date.now() - Date.parse(page.ts) <= 300000) {
+                        for (const prediction of page.predictions || []) {
+                            const index = prediction.rowIndex;
+                            if (!Number.isInteger(index) || index < 0 || index >= page.data.horarios.length ||
+                                !(Date.parse(prediction.departureTime) >= Date.now())) continue;
+                            const entry = page.data.horarios[index];
+                            const row = rows[offset + index];
+                            if (!row || prediction.trainNumber !== entry.tren) continue;
+                            const fields = [
+                                ['hora', '.col-hora > div > span:first-child'],
+                                ['horaEstado', '.col-hora > div > span:nth-child(2)'],
+                                ['tren', '.col-tren > div > span:nth-child(2) > span'],
+                                ['trenDatosOp', '.col-tren > div > span:first-child'],
+                                ['estacion', '.col-destino > div > :first-child'],
+                                ['via', '.col-via > div > span:first-child'],
+                            ];
+                            if (!fields.every(([field, selector]) => clean(row.querySelector(selector)?.textContent) === decoded(entry[field]))) continue;
+                            const labels = formatPlatforms(prediction.probabilities || []);
+                            const platform = row.querySelector('.col-via > div');
+                            if (!labels || !platform) continue;
+                            appendAdifEstimate(platform, labels);
+                            displayed = true;
+                        }
+                    }
+                    offset += page.data.horarios.length;
+                }
+                if (displayed) showBanner();
+            } finally {
+                observer.observe(document.body, {childList: true, subtree: true, characterData: true});
+            }
+        }
+
+        function reset() {
+            generation++;
+            pages.clear();
+            render();
+        }
+
+        async function received(xhr, context) {
+            if (context.generation !== generation || xhr.status !== 200) return;
+            let data;
+            try { data = xhr.responseType === 'json' ? xhr.response : JSON.parse(xhr.responseText); }
+            catch { return; }
+            if (!Array.isArray(data?.horarios) || data.error) return;
+            const page = {data, ts: new Date().toISOString(), predictions: []};
+            pages.set(context.page, page);
+            render();
+            if (!data.horarios.length) return;
+            catalogRequest ||= request('/adif-web/stations');
+            const catalog = await catalogRequest;
+            if (!Array.isArray(catalog?.stations)) catalogRequest = null;
+            if (context.generation !== generation || pages.get(context.page) !== page || !catalog?.stations?.includes(station)) return;
+            const result = await request('/adif-web/predict', {station, traffic: context.traffic, ts: page.ts, data});
+            if (context.generation !== generation || pages.get(context.page) !== page) return;
+            page.predictions = Array.isArray(result?.predictions) ? result.predictions : [];
+            render();
+        }
+
+        const open = XMLHttpRequest.prototype.open;
+        const send = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+            const result = open.call(this, method, url, ...rest);
+            requests.delete(this);
+            try {
+                const target = new URL(url, location.href);
+                const params = target.searchParams;
+                const filter = params.get(PREFIX + 'trafficType');
+                const page = params.get(PREFIX + 'numPage');
+                if (String(method).toUpperCase() === 'GET' && target.origin === location.origin &&
+                    target.pathname === location.pathname && params.get('p_p_resource_id') === '/consultarHorario' &&
+                    params.get(PREFIX + 'searchType') === 'proximasSalidas' &&
+                    params.get(PREFIX + 'stationCode') === station && ['cercanias', 'avldmd'].includes(filter) &&
+                    /^\d+$/.test(page) && Number(page) < 100) {
+                    requests.set(this, {page: Number(page), traffic: filter});
+                }
+            } catch { /* Leave unrelated requests unchanged. */ }
+            return result;
+        };
+        XMLHttpRequest.prototype.send = function(...args) {
+            const context = requests.get(this);
+            if (context) {
+                if (context.page === 0 || context.traffic !== traffic) reset();
+                traffic = context.traffic;
+                pages.delete(context.page);
+                render();
+                const current = {...context, generation};
+                this.addEventListener('loadend', () => { received(this, current).catch(() => {}); }, {once: true});
+            }
+            return send.apply(this, args);
+        };
+        document.addEventListener('change', event => {
+            if (event.target.name === 'trafficType') reset();
+        });
+        if (document.body) render();
+        else document.addEventListener('DOMContentLoaded', render, {once: true});
+        setInterval(render, 30000);
+    }
+
     function startAdif() {
         if (window.__onVoieAdifActive) return;
         window.__onVoieAdifActive = true;
@@ -309,11 +490,7 @@
                     const labels = predictions.get(row.getAttribute('train-id'));
                     const platform = row.querySelector('.train-platform');
                     if (!labels || !platform) continue;
-                    const estimate = document.createElement('span');
-                    estimate.className = MARKER;
-                    estimate.textContent = 'Est. ' + labels;
-                    estimate.title = 'Estimación experimental. Las puntuaciones no son probabilidades calibradas. Consulte los paneles y anuncios de ADIF.';
-                    platform.appendChild(estimate);
+                    appendAdifEstimate(platform, labels);
                     displayed = true;
                 }
                 if (displayed) showBanner();
