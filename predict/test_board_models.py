@@ -48,6 +48,26 @@ def test_prior_models_use_the_existing_operator_routes(tmp_path, monkeypatch, op
         assert prediction["probabilities"] == [{"platform": "2EST", "prob": 1.0}]
 
 
+def test_custom_schema_reuses_board_training_and_prediction(tmp_path):
+    import polars as pl
+    from predict.board_features import FeatureSchema
+    from predict.board_api import board_predictions
+    from rfi.train import train_station
+
+    schema = FeatureSchema(3, ("predictedPlatform", "trainNumber"), ("leadMinutes",), "departureTime")
+    rows = pl.DataFrame({"serviceDate": ["2026-10-16"] * 2, "departureId": ["a", "b"],
+                         "timestamp": [1, 2], "predictedPlatform": ["MISSING"] * 2,
+                         "trainNumber": ["123"] * 2, "leadMinutes": [10.0] * 2,
+                         "weight": [1.0, 1.0], "actualPlatform": ["1", "2"]})
+    report = train_station("12345", rows, tmp_path, schema=schema)
+    assert report["schema_version"] == 3
+    model = PlatformPrior.load_model(tmp_path / "12345.prior.json")
+    predictions = board_predictions(model, rows.select(schema.features).to_dicts(), [{"id": "a"}, {"id": "b"}], schema)
+    assert len(predictions) == 2
+    assert predictions[0]["confidence"] == 0.5
+    assert model.schema_version == 3
+
+
 def test_default_sncf_route_does_not_load_board_priors(tmp_path, monkeypatch):
     module = importlib.import_module("predict.predict")
     monkeypatch.setattr(module, "MODELS_DIR", str(tmp_path))

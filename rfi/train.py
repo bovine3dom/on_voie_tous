@@ -11,12 +11,12 @@ from catboost import CatBoostClassifier, Pool
 
 from predict.model import get_station_folders, extract_station_id, load_station_data
 from predict.board_models import MODEL_SUFFIXES, PlatformPrior
-from .features import CAT_COLS, FEATURES, SCHEMA_VERSION, feature_frame
+from predict.board_features import SCHEMA
 
 ROOT = Path(__file__).resolve().parent
 
 
-def chronological_split(df: pl.DataFrame):
+def chronological_split(df: pl.DataFrame, schema=SCHEMA):
     days = sorted(df["serviceDate"].unique().to_list())
     if len(days) < 3:
         return None
@@ -26,18 +26,18 @@ def chronological_split(df: pl.DataFrame):
     validation = df.filter((pl.col("serviceDate") >= days[first]) & (pl.col("serviceDate") < days[second]))
     test = df.filter(pl.col("serviceDate") >= days[second])
     # A target must be available before the next evaluation period starts.
-    train = train.filter(pl.col("labelTimestamp") < validation["scheduledTime"].min())
-    validation = validation.filter(pl.col("labelTimestamp") < test["scheduledTime"].min())
+    train = train.filter(pl.col("labelTimestamp") < validation[schema.time_column].min())
+    validation = validation.filter(pl.col("labelTimestamp") < test[schema.time_column].min())
     return train, validation, test
 
 
-def compact_rows(df: pl.DataFrame, seconds: int):
+def compact_rows(df: pl.DataFrame, seconds: int, schema=SCHEMA):
     if seconds < 0:
         raise ValueError("Compaction seconds must be nonnegative")
     report = {"bucket_seconds": seconds, "raw_rows": df.height, "fit_rows": df.height}
     if not seconds or df.is_empty():
         return df, report
-    keys = ["departureId", "actualPlatform", "_bucket"] + [name for name in FEATURES if name != "leadMinutes"]
+    keys = ["departureId", "actualPlatform", "_bucket"] + [name for name in schema.features if name != "leadMinutes"]
     compacted = (df.sort("timestamp", maintain_order=True)
                  .with_columns((pl.col("timestamp") // seconds).alias("_bucket"))
                  .group_by(keys, maintain_order=True)
@@ -53,13 +53,13 @@ def compact_rows(df: pl.DataFrame, seconds: int):
     return compacted, report
 
 
-def pool(df: pl.DataFrame) -> Pool:
-    return Pool(feature_frame(df), label=df["actualPlatform"].to_list(),
-                cat_features=CAT_COLS, weight=df["weight"].to_list())
+def pool(df: pl.DataFrame, schema=SCHEMA) -> Pool:
+    return Pool(schema.frame(df), label=df["actualPlatform"].to_list(),
+                cat_features=list(schema.categorical), weight=df["weight"].to_list())
 
 
-def baseline(train: pl.DataFrame, evaluation: pl.DataFrame):
-    keys = [name for name in CAT_COLS if name != "predictedPlatform"]
+def baseline(train: pl.DataFrame, evaluation: pl.DataFrame, schema=SCHEMA):
+    keys = [name for name in schema.categorical if name != "predictedPlatform"]
     departures = train.unique("departureId")
     common = Counter(departures["actualPlatform"].to_list()).most_common(1)[0][0]
     grouped = {}
@@ -71,17 +71,17 @@ def baseline(train: pl.DataFrame, evaluation: pl.DataFrame):
     ])
 
 
-def metrics(model, train, evaluation, confidence=0.8):
+def metrics(model, train, evaluation, confidence=0.8, schema=SCHEMA):
     # Keep blank, published, and revised platforms separate at the audit horizon.
     evaluation = evaluation.filter(pl.col("horizon") == 30)
     if evaluation.is_empty():
         return {"departures": 0}
-    probabilities = model.predict_proba(feature_frame(evaluation))
+    probabilities = model.predict_proba(schema.frame(evaluation))
     predicted = np.asarray(model.classes_)[probabilities.argmax(axis=1)].astype(str)
     labels = np.array(evaluation["actualPlatform"].to_list())
     correct = predicted == labels
     accepted = probabilities.max(axis=1) >= confidence
-    historical = baseline(train, evaluation) == labels
+    historical = baseline(train, evaluation, schema) == labels
     published = np.array(evaluation["predictedPlatform"].to_list()) != "MISSING"
     changed = published & (np.array(evaluation["predictedPlatform"].to_list()) != labels)
     unseen = ~np.isin(labels, model.classes_)
@@ -109,35 +109,36 @@ def metrics(model, train, evaluation, confidence=0.8):
     }
 
 
-def fit_model(df, iterations, threads, validation=None):
+def fit_model(df, iterations, threads, validation=None, schema=SCHEMA):
     classes = df["actualPlatform"].unique().to_list()
-    if len(classes) == 1 or feature_frame(df).n_unique() == 1:
+    if len(classes) == 1 or schema.frame(df).n_unique() == 1:
         counts = df.group_by("actualPlatform").agg(pl.col("weight").sum()).sort("actualPlatform")
-        return PlatformPrior(counts["actualPlatform"].to_list(), counts["weight"].to_numpy() / counts["weight"].sum())
+        return PlatformPrior(counts["actualPlatform"].to_list(), counts["weight"].to_numpy() / counts["weight"].sum(),
+                             schema.features, schema.version)
     model = CatBoostClassifier(iterations=iterations, learning_rate=0.1, depth=6,
                               loss_function="MultiClass", eval_metric="MultiClass",
                               random_seed=1337, verbose=False, thread_count=threads,
                               allow_writing_files=False, has_time=True)
     known = validation.filter(pl.col("actualPlatform").is_in(classes)) if validation is not None else None
-    kwargs = {"eval_set": pool(known), "early_stopping_rounds": 40,
+    kwargs = {"eval_set": pool(known, schema), "early_stopping_rounds": 40,
               "use_best_model": True} if known is not None and not known.is_empty() else {}
-    model.fit(pool(df.sort("timestamp")), **kwargs)
+    model.fit(pool(df.sort("timestamp"), schema), **kwargs)
     return model
 
 
-def train_station(station, df, output, iterations=100, threads=4, refit=False, compact_seconds=0):
+def train_station(station, df, output, iterations=100, threads=4, refit=False, compact_seconds=0, schema=SCHEMA):
     if compact_seconds < 0:
         raise ValueError("Compaction seconds must be nonnegative")
     report = {"station_id": station, "rows": df.height,
               "departures": df["departureId"].n_unique(), "compaction": {}}
 
     def fit_input(part, name):
-        compacted, details = compact_rows(part, compact_seconds)
+        compacted, details = compact_rows(part, compact_seconds, schema)
         report["compaction"][name] = details
         return compacted
     if df.is_empty():
         return report | {"status": "no_labels"}
-    split = chronological_split(df)
+    split = chronological_split(df, schema)
     if split is not None:
         report["split_departures"] = {name: part["departureId"].n_unique()
                                       for name, part in zip(("train", "validation", "test"), split)}
@@ -146,17 +147,17 @@ def train_station(station, df, output, iterations=100, threads=4, refit=False, c
     if available:
         train, validation, test = split
         model = fit_model(fit_input(train, "train"), iterations, threads,
-                          fit_input(validation, "early_stopping"))
+                          fit_input(validation, "early_stopping"), schema)
         report.update(backtest_status="available", classes=[str(x) for x in model.classes_],
                       training_last_date=train["serviceDate"].max(),
-                      validation=metrics(model, train, validation), test=metrics(model, train, test))
+                      validation=metrics(model, train, validation, schema=schema), test=metrics(model, train, test, schema=schema))
     else:
         report.update(backtest_status="unavailable", backtest_reason="insufficient_chronological_periods")
     fitted = df if refit or not available else split[0]
     if refit or not available:
         model = fit_model(fit_input(fitted, "full"),
-                          (model.tree_count_ or iterations) if model is not None else iterations, threads)
-    report.update(status="trained", schema_version=SCHEMA_VERSION, features=FEATURES,
+                          (model.tree_count_ or iterations) if model is not None else iterations, threads, schema=schema)
+    report.update(status="trained", schema_version=schema.version, features=schema.features,
                   trees=model.tree_count_, model_kind="platform_prior" if isinstance(model, PlatformPrior) else "catboost",
                   refitted=refit and available, model_last_date=fitted["serviceDate"].max(),
                   model_departures=fitted["departureId"].n_unique(), model_classes=[str(x) for x in model.classes_])
@@ -172,9 +173,9 @@ def train_station(station, df, output, iterations=100, threads=4, refit=False, c
 
 
 def train_folder(job):
-    folder, output, iterations, threads, refit, compact_seconds = job
+    folder, output, iterations, threads, refit, compact_seconds, schema = job
     station = extract_station_id(folder)
-    report = train_station(station, load_station_data(folder), output, iterations, threads, refit, compact_seconds)
+    report = train_station(station, load_station_data(folder), output, iterations, threads, refit, compact_seconds, schema)
     if report["status"] != "trained":
         for suffix in MODEL_SUFFIXES:
             (output / f"{station}{suffix}").unlink(missing_ok=True)
@@ -186,7 +187,7 @@ def train_folder(job):
     return report
 
 
-def main(root=ROOT):
+def main(root=ROOT, schema=SCHEMA):
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=Path, default=root / "hive")
     parser.add_argument("--models", type=Path, default=root / "models")
@@ -203,7 +204,8 @@ def main(root=ROOT):
     if min(args.iterations, args.threads, args.workers) <= 0:
         parser.error("Training limits must be positive")
     dataset = json.loads((args.data / "dataset.json").read_text())
-    if dataset["schema_version"] != SCHEMA_VERSION:
+    if (dataset["schema_version"] != schema.version or
+            dataset.get("features", schema.features) != schema.features):
         parser.error("Unsupported dataset schema")
     args.models.mkdir(parents=True, exist_ok=True)
     if not args.stations:
@@ -211,7 +213,7 @@ def main(root=ROOT):
             for path in args.models.glob("*" + suffix):
                 if not dataset["station_rows"].get(path.name.removesuffix(suffix)):
                     path.unlink()
-    jobs = [(folder, args.models, args.iterations, args.threads, args.refit, args.compact_seconds)
+    jobs = [(folder, args.models, args.iterations, args.threads, args.refit, args.compact_seconds, schema)
             for folder in get_station_folders(str(args.data))
             if dataset["station_rows"].get(extract_station_id(folder))
             and (not args.stations or extract_station_id(folder) in args.stations)]
@@ -223,7 +225,7 @@ def main(root=ROOT):
     reports.extend({"station_id": station, "rows": 0, "departures": 0, "status": "no_labels"}
                    for station, count in dataset["station_rows"].items()
                    if not count and (not args.stations or station in args.stations))
-    summary = {"schema_version": SCHEMA_VERSION, "dataset": dataset, "stations": reports}
+    summary = {"schema_version": schema.version, "dataset": dataset, "stations": reports}
     temporary = args.models / "report.json.tmp"
     temporary.write_text(json.dumps(summary, indent=2) + "\n")
     temporary.replace(args.models / "report.json")

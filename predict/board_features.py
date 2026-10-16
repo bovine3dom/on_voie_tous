@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import polars as pl
 
 SCHEMA_VERSION = 2
@@ -7,8 +9,23 @@ FEATURES = CAT_COLS + [
 ]
 
 
-def feature_frame(df: pl.DataFrame) -> pl.DataFrame:
-    return df.select(FEATURES).with_columns(
-        pl.col(CAT_COLS).cast(pl.String).fill_null("MISSING"),
-        pl.col(FEATURES[len(CAT_COLS):]).cast(pl.Float64),
-    )
+@dataclass(frozen=True)
+class FeatureSchema:
+    version: int
+    categorical: tuple[str, ...]
+    numeric: tuple[str, ...]
+    time_column: str = "scheduledTime"
+
+    @property
+    def features(self):
+        return list(self.categorical + self.numeric)
+
+    def frame(self, df: pl.DataFrame) -> pl.DataFrame:
+        return df.select(self.features).with_columns(
+            pl.col(list(self.categorical)).cast(pl.String).fill_null("MISSING"),
+            pl.col(list(self.numeric)).cast(pl.Float64),
+        )
+
+
+SCHEMA = FeatureSchema(SCHEMA_VERSION, tuple(CAT_COLS), tuple(FEATURES[len(CAT_COLS):]))
+feature_frame = SCHEMA.frame
