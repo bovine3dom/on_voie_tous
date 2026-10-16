@@ -198,7 +198,7 @@ def test_sncf_uses_the_default_api_and_preserves_existing_display(page, wrapped,
         page.add_script_tag(path=str(SCRIPT))
     result = page.evaluate("async () => (await fetch('/schedule-table/test')).json()")
     displayed = result["data"] if wrapped else result
-    expected = ["1-4 (100%)", "C (80%) | D (20%)", "D"] if status == 200 else ["", "C", "D"]
+    expected = ["1-4 (100%)", "C | C (80%), D (20%)", "D"] if status == 200 else ["", "C", "D"]
     assert [train["platform"]["track"] for train in displayed] == expected
     assert len(calls) == 1
     assert calls[0]["station"] == "0087756056"
@@ -208,13 +208,13 @@ def test_sncf_uses_the_default_api_and_preserves_existing_display(page, wrapped,
 
 
 @pytest.mark.parametrize("track,probabilities,expected", [
-    ("C", [("C", 1)], "C (100%)"),
-    ("C", [("C", 0.03), ("D", 0.97)], "C (3%) | D (97%)"),
+    ("C", [("C", 1)], "C | C (100%)"),
+    ("C", [("C", 0.03), ("D", 0.97)], "C | D (97%)"),
     ("C", [("D", 0.9)], "C | D (90%)"),
     ("C", [], "C"),
-    ("2", [("1", 0.2), ("2", 0.2), ("3", 0.2), ("4", 0.4)], "2 (20%) | 4 (40%), 1 (20%)"),
+    ("2", [("1", 0.2), ("2", 0.2), ("3", 0.2), ("4", 0.4)], "2 | 4 (40%), 1-3 (60%)"),
 ])
-def test_sncf_announced_platform_is_separate_from_alternatives(page, track, probabilities, expected):
+def test_sncf_announced_platform_is_separate_from_predictions(page, track, probabilities, expected):
     page.route("https://www.garesetconnexions.sncf/**", lambda route: route.fulfill(
         content_type="text/html", body="<html><body></body></html>"))
     page.route("**/schedule-table/test", lambda route: route.fulfill(json=[{
