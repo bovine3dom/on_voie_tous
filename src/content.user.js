@@ -82,16 +82,6 @@
                 text-decoration: underline !important;
                 cursor: pointer !important;
             }
-            .on-voie-adif-estimate {
-                display: block !important;
-                white-space: normal !important;
-                overflow-wrap: anywhere !important;
-                font: 14px/1.2 sans-serif !important;
-                color: #fff !important;
-                background: #333 !important;
-                position: relative !important;
-                z-index: 1 !important;
-            }
             tr[name="treno"] [id="RBinario"],
             tr[name="treno"] [id="RBinario"] div,
             .on-voie-rfi-estimate {
@@ -332,7 +322,7 @@
     function appendAdifEstimate(platform, labels) {
         const estimate = document.createElement('span');
         estimate.className = 'on-voie-adif-estimate';
-        estimate.textContent = 'Est. ' + labels;
+        estimate.textContent = (platform.textContent.trim() ? ' | ' : '') + labels;
         estimate.title = 'Estimación experimental. Las puntuaciones no son probabilidades calibradas. Consulte los paneles y anuncios de ADIF.';
         platform.appendChild(estimate);
     }
@@ -386,7 +376,7 @@
                             ];
                             if (!fields.every(([field, selector]) => clean(row.querySelector(selector)?.textContent) === decoded(entry[field]))) continue;
                             const labels = formatPlatforms(prediction.probabilities || []);
-                            const platform = row.querySelector('.col-via > div');
+                            const platform = row.querySelector('.col-via > div > span:first-child');
                             if (!labels || !platform) continue;
                             appendAdifEstimate(platform, labels);
                             displayed = true;

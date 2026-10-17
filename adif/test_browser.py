@@ -50,6 +50,7 @@ def test_message_features_identity_redraw_and_no_feedback(board):
     page.route("**/predict?operator=adif", lambda route: respond(route, calls))
     send(page, [train(platform="9"), train("22")])
     pw.expect(frame.locator(".on-voie-adif-estimate")).to_have_count(2)
+    assert frame.locator(".adif-infotren-vista-departures .train-platform").all_text_contents() == ["9 | 20B (90%)", "20B (90%)"]
     data = calls[0]["data"][0]
     assert data["trainNumber"] == "00123"
     assert data["destination"] == "100|900"

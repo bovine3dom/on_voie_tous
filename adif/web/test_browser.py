@@ -28,7 +28,7 @@ window.poll = (number = 0, search = 'proximasSalidas') => new Promise(resolve =>
             tr.innerHTML = `<td class="col-hora"><div><span>${r.hora}</span><span>${r.horaEstado || ''}</span></div></td>
                 <td class="col-destino"><div><span>${r.estacion}</span></div></td>
                 <td class="col-tren"><div><span>${r.trenDatosOp || ''}</span><span><span>${r.tren}</span></span></div></td>
-                <td class="col-via"><div><span>${r.via}</span></div></td>`;
+                <td class="col-via"><div><span>${r.via}</span><i class="fas fa-times"></i></div></td>`;
             tbody.appendChild(tr);
         }
         resolve(data);
@@ -70,7 +70,7 @@ def test_identity_pagination_and_native_response(board_page):
     page.add_script_tag(path=str(SCRIPT))
     assert page.evaluate("poll()") == raw
     pw.expect(page.locator('.on-voie-adif-estimate')).to_have_count(2)
-    assert page.locator('.col-via').all_text_contents() == ['8Est. 1 (90%)', 'Est. 2 (90%)']
+    assert page.locator('.col-via > div > span:first-child').all_text_contents() == ['8 | 1 (90%)', '2 (90%)']
     assert calls[0]['data'] == raw
     assert set(calls[0]) == {'station', 'traffic', 'ts', 'data'}
     page.evaluate("poll(1)")
@@ -140,9 +140,9 @@ def test_extension_bridge_with_strict_csp(tmp_path):
             page = context.new_page()
             page.goto(URL)
             assert page.evaluate('poll()') == raw
-            pw.expect(page.locator('.on-voie-adif-estimate')).to_have_text('Est. 4 (90%)')
+            pw.expect(page.locator('.on-voie-adif-estimate')).to_have_text(' | 4 (90%)')
             assert calls[0]['data'] == raw
-            assert page.locator('.col-via > div > span:first-child').inner_text() == '8'
+            assert page.locator('.col-via > div > span:first-child').inner_text() == '8 | 4 (90%)'
             # The page cannot use the bridge to request arbitrary URLs.
             page.evaluate("window.postMessage({type: 'on-voie-request', id: 'bad', path: '/private'}, location.origin)")
             page.wait_for_timeout(100)
