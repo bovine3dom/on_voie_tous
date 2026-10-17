@@ -12,8 +12,7 @@ from .prepare import ROOT
 
 def predict_board(model, station, traffic, data, collected):
     observations, issues = parse_board(station, traffic, data, collected)
-    observations = [row for row in observations if not row.excluded and
-                    0 <= live_features(row)["leadMinutes"] <= 60]
+    observations = [row for row in observations if not row.excluded]
     rows = [live_features(row) for row in observations]
     identities = [{"rowIndex": row.row_index, "trainNumber": row.train,
                    "departureTime": row.departure.isoformat()} for row in observations]
