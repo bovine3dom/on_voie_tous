@@ -1,9 +1,11 @@
 import argparse
 from collections import Counter, defaultdict
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 
 import polars as pl
 
@@ -13,50 +15,73 @@ from .parse import instant, parse_board
 ROOT = Path(__file__).resolve().parent
 
 
+@contextmanager
+def event_stream(path):
+    if path.suffix != ".zst":
+        with path.open() as stream:
+            yield stream
+        return
+    with subprocess.Popen(["zstd", "--long=28", "-dc", str(path)],
+                          stdout=subprocess.PIPE, text=True) as process:
+        try:
+            yield process.stdout
+        finally:
+            process.stdout.close()
+        if process.wait():
+            raise ValueError(f"cannot decompress {path}")
+
+
 def read_observations(paths, audit):
     observations, seen = [], set()
     logs = sorted({log.resolve() for path in paths for log in
-                   ([path] if path.is_file() else path.rglob("events.jsonl"))})
+                   ([path] if path.is_file() else
+                    list(path.rglob("events.jsonl")) + list(path.rglob("*.jsonl.zst")))})
     if not logs:
-        raise ValueError("no events.jsonl files found")
+        raise ValueError("no probe logs or collector archives found")
+    active, starts = {}, {}
     for log in logs:
-        active, starts = {}, {}
-        with log.open() as stream:
+        with event_stream(log) as stream:
             for line in stream:
                 if not line.endswith("\n"):
                     audit["unfinished_event_lines"] += 1
                     continue
                 event = json.loads(line)
+                event = event.get("data", event)
                 if event.get("kind") != "board":
                     continue
                 if event.get("outcome") not in ("board", "empty"):
                     audit["failed_requests"] += 1
                     continue
                 key = (event.get("station"), event.get("traffic"))
+                window = (log.parent, *key)
                 page = event.get("page")
                 if page == 0:
-                    active[key] = True
-                    starts[key] = instant(event["ts"])
-                if not active.get(key):
+                    active[window] = True
+                    starts[window] = instant(event["ts"])
+                if not active.get(window):
                     audit["pages_outside_window_or_without_start"] += 1
                     continue
-                name = event.get("raw", "")
-                if not name or Path(name).name != name or not name.endswith(".body"):
-                    raise ValueError("invalid raw response filename")
-                raw = log.parent / name
-                if raw.stat().st_size > 8 * 1024 * 1024:
-                    raise ValueError("raw response exceeds 8 MiB")
+                board = event.get("response")
+                if "response" not in event:
+                    name = event.get("raw", "")
+                    if not name or Path(name).name != name or not name.endswith(".body"):
+                        raise ValueError("invalid raw response filename")
+                    raw = log.parent / name
+                    if raw.stat().st_size > 8 * 1024 * 1024:
+                        raise ValueError("raw response exceeds 8 MiB")
+                    board = raw.read_bytes()
                 try:
-                    board = json.loads(raw.read_bytes())
+                    if isinstance(board, bytes):
+                        board = json.loads(board)
                     rows, issues = parse_board(*key, board, instant(event["ts"]))
                 except (ValueError, KeyError, TypeError):
                     audit["invalid_boards"] += 1
-                    active[key] = False
+                    active[window] = False
                     continue
                 audit.update(issues)
                 audit["boards"] += 1
                 if not rows or any((r.display_time.timestamp() - r.board_time.timestamp()) / 60 > 65 for r in rows):
-                    active[key] = False
+                    active[window] = False
                 for row in rows:
                     lead = live_features(row)["leadMinutes"]
                     if not -2 <= lead <= 65:
@@ -67,7 +92,7 @@ def read_observations(paths, audit):
                         audit["duplicate_observations"] += 1
                         continue
                     seen.add(identity)
-                    observations.append(replace(row, snapshot=starts[key]))
+                    observations.append(replace(row, snapshot=starts[window]))
     return observations, logs
 
 
@@ -168,7 +193,7 @@ def prepare(paths, output, tolerance=120):
         directory.mkdir()
         pl.DataFrame(values, schema_overrides={name: pl.Float64 for name in SCHEMA.numeric}).sort("timestamp").write_ipc(directory / "part0.arrow")
     metadata = {"operator": "adif-web", "schema_version": SCHEMA.version, "features": SCHEMA.features,
-                "parser_version": 1, "match_tolerance_seconds": tolerance,
+                "parser_version": 2, "match_tolerance_seconds": tolerance,
                 "label_policy": "last_single_platform_within_5_minutes_before_or_2_after",
                 "sources": [str(log) for log in logs], "observations": len(observations),
                 "departures": len(tracks), "rows": len(rows),

@@ -20,3 +20,13 @@ uv run --project predict python -m adif.train --refit
 ```
 
 Models go to `adif/models/`. See [predict/](../predict/readme.md#predict) to run the server.
+
+For website boards, install `zstd` and use a new output directory:
+
+```
+uv run --project predict python -m adif.web.prepare /path/to/data/es-adif-web --output /path/to/web-hive
+uv run --project predict python -m adif.web.train --data /path/to/web-hive --models /path/to/web-models --workers 15 --threads 2 --refit
+```
+
+Preparation reads complete `.jsonl.zst` archives and probe logs. It skips `current.jsonl`.
+Set `ADIF_WEB_MODELS_DIR` to the new models directory and restart the server.

@@ -3,6 +3,7 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import timedelta
 import json
+import subprocess
 
 import polars as pl
 import pytest
@@ -180,6 +181,44 @@ def test_prepare_train_predict_roundtrip_and_schema_isolation(tmp_path):
     loaded = PlatformPrior.load_model(tmp_path / "prior.json")
     assert loaded.schema_version == 3 and loaded.feature_names_ == SCHEMA.features
     assert OLD_SCHEMA.version == 2
+
+
+def test_collector_archives_match_probe_data_and_ignore_current(tmp_path):
+    probe = tmp_path / "probe"
+    events = write_archive(probe)
+    collector = tmp_path / "collector"
+    collector.mkdir()
+    lines = []
+    for event in events:
+        data = dict(event, response=json.loads((probe / event["raw"]).read_bytes()))
+        del data["raw"]
+        lines.append(json.dumps({"ts": event["ts"], "station": event["station"], "data": data}) + "\n")
+    lines.append(json.dumps({"data": {"kind": "board", "outcome": "error", "body_base64": "AA=="}}) + "\n")
+    # A poll may cross an archive rotation.
+    extra = json.loads(lines[0])
+    extra["data"].update(page=1, ts="2026-10-16T12:00:01Z")
+    parts = [lines[:1], [json.dumps(extra) + "\n"] + lines[1:]]
+    for i, part in enumerate(parts):
+        compressed = subprocess.run(["zstd", "-q", "-c"], input="".join(part).encode(),
+                                    check=True, capture_output=True).stdout
+        (collector / f"{i}.jsonl.zst").write_bytes(compressed)
+    (collector / "current.jsonl").write_text("not a completed archive")
+    audit = Counter()
+    observed, logs = read_observations([collector], audit)
+    assert len(logs) == 2 and audit["failed_requests"] == 1
+    assert len(observed) == 8
+    assert observed[0].snapshot == observed[2].snapshot
+    assert audit["pages_outside_window_or_without_start"] == 0
+    metadata = prepare([collector], tmp_path / "hive")
+    assert metadata["audit"]["labelled_departures"] == 2
+    assert metadata["rows"] == 4
+
+
+def test_corrupt_collector_archive_fails(tmp_path):
+    archive = tmp_path / "bad.jsonl.zst"
+    archive.write_bytes(b"not zstd")
+    with pytest.raises(ValueError, match="cannot decompress"):
+        read_observations([archive], Counter())
 
 
 def test_chronological_split_keeps_departure_samples_together():
