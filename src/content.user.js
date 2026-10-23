@@ -52,7 +52,11 @@
 
         const banner = document.createElement('div');
         banner.id = 'on-voie-tous-banner';
-        banner.innerHTML = 'Platform predictions provided by <a href="https://github.com/bovine3dom/on_voie_tous">On Voie Tous</a>, an experimental extension unaffiliated with SNCF, RFI or ADIF.';
+        const link = document.createElement('a');
+        link.href = 'https://github.com/bovine3dom/on_voie_tous';
+        link.textContent = 'On Voie Tous';
+        banner.append('Platform predictions provided by ', link,
+            ', an experimental extension unaffiliated with SNCF, RFI or ADIF.');
         document.body.appendChild(banner);
     }
 
@@ -335,9 +339,9 @@
         const MARKER = 'on-voie-adif-estimate';
         const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim();
         const decoded = value => {
-            const text = document.createElement('textarea');
-            text.innerHTML = String(value ?? '');
-            return clean(text.value);
+            // Keep literal tags as text while decoding character references.
+            const text = new DOMParser().parseFromString(String(value ?? '').replace(/</g, '&lt;'), 'text/html');
+            return clean(text.body.textContent);
         };
         const pages = new Map();
         const requests = new WeakMap();

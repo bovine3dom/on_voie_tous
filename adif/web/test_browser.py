@@ -83,6 +83,23 @@ def test_identity_pagination_and_native_response(board_page):
     pw.expect(page.locator('.on-voie-adif-estimate')).to_have_count(3)
 
 
+@pytest.mark.parametrize('value, expected', [
+    ("L&#39;Hospitalet&nbsp;&amp; \t Barcelona", "L'Hospitalet & Barcelona"),
+    ("&#x1F686; &eacute; &unknown; &#128646;", "🚆 é &unknown; 🚆"),
+    ("&amp;lt; &lt;b&gt; &#60; &#x3c;", "&lt; <b> < <"),
+    ("Destination <b>literal</b>", "Destination <b>literal</b>"),
+    ("Destination </textarea><b>literal</b>", "Destination </textarea><b>literal</b>"),
+    ("A\x00B", "AB"),
+    (None, ""),
+])
+def test_row_identity_decodes_entities_and_preserves_literal_tags(board_page, value, expected):
+    page, raw, _ = board_page
+    raw['horarios'][0]['estacion'] = value
+    page.evaluate('poll()')
+    page.locator('.col-destino span').first.evaluate('(el, text) => el.textContent = text', expected)
+    pw.expect(page.locator('.on-voie-adif-estimate')).to_have_count(2)
+
+
 @pytest.mark.parametrize('failure', ['server', 'catalog', 'arrival', 'board'])
 def test_failures_leave_official_platforms(board_page, failure):
     page, raw, calls = board_page

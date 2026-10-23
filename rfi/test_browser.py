@@ -287,11 +287,14 @@ def test_banner_has_shared_styles_despite_page_css(page, operator):
         assert result[0]["platform"]["track"] == "1 (90%)"
     banner = page.locator("#on-voie-tous-banner")
     pw.expect(banner).to_be_visible()
+    assert banner.text_content() == ('Platform predictions provided by On Voie Tous, '
+        'an experimental extension unaffiliated with SNCF, RFI or ADIF.')
     assert banner.count() == 1
     assert banner.evaluate("el => { const s = getComputedStyle(el); return [s.position, s.top, s.backgroundColor, s.color, s.fontSize, s.lineHeight]; }") == [
         "fixed", "0px", "rgb(240, 173, 78)", "rgb(51, 51, 51)", "14px", "21px",
     ]
     link = banner.locator("a")
+    assert link.get_attribute('href') == 'https://github.com/bovine3dom/on_voie_tous'
     assert link.evaluate("el => { const s = getComputedStyle(el); return [s.color, s.fontSize, s.textDecorationLine]; }") == [
         "rgb(51, 51, 51)", "14px", "underline",
     ]
