@@ -1,10 +1,7 @@
 # ADIF
 
-The [userscript](../src/content.user.js) adds predictions to [Pantallas estaciones ADIF](https://pantallas-estaciones.vercel.app/).
-Select a departure board and keep the platform column visible.
+The [userscript](../src/content.user.js) adds predictions to [Pantallas estaciones ADIF](https://pantallas-estaciones.vercel.app/) and to [ADIF station pages](https://www.adif.es/w/79400-barcelona-e.fran%C3%A7a).
 
-It also adds experimental predictions to [ADIF station pages](https://www.adif.es/w/79400-barcelona-e.fran%C3%A7a).
-`Est.` marks predictions. ADIF's platform stays unchanged. Scores are not calibrated probabilities.
 Allow access to `www.adif.es` and `compute.olie.science` when you update the extension or userscript.
 Website models use `adif/web/models/` (`ADIF_WEB_MODELS_DIR` to override).
 The server provides `/adif-web/stations` and `/adif-web/predict`.
@@ -21,12 +18,11 @@ uv run --project predict python -m adif.train --refit
 
 Models go to `adif/models/`. See [predict/](../predict/readme.md#predict) to run the server.
 
-For website boards, install `zstd` and use a new output directory:
+For adif.es boards, install `zstd` and use a new output directory:
 
 ```
 uv run --project predict python -m adif.web.prepare /path/to/data/es-adif-web --output /path/to/web-hive
 uv run --project predict python -m adif.web.train --data /path/to/web-hive --models /path/to/web-models --workers 15 --threads 2 --refit
 ```
 
-Preparation reads complete `.jsonl.zst` archives and probe logs. It skips `current.jsonl`.
 Set `ADIF_WEB_MODELS_DIR` to the new models directory and restart the server.
