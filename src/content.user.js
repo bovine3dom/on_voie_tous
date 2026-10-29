@@ -555,9 +555,11 @@
     function startRfi() {
         const MARKER = 'on-voie-rfi-estimate';
         if (window.__onVoieRfiActive) return;
-        const url = new URL(window.location.href);
-        const station = url.searchParams.get('placeId');
-        if (!station || !/^\d+$/.test(station) || url.searchParams.get('arrivals')?.toLowerCase() === 'true') return;
+        // RFI's own station picker submits PlaceId=…&Arrivals=…, so match names case-insensitively.
+        const params = new URLSearchParams(Array.from(new URL(window.location.href).searchParams,
+            ([key, value]) => [key.toLowerCase(), value]));
+        const station = params.get('placeid');
+        if (!station || !/^\d+$/.test(station) || params.get('arrivals')?.toLowerCase() === 'true') return;
 
         window.__onVoieRfiActive = true;
         const clean = text => (text || '').replace(/\s+/g, ' ').trim();
