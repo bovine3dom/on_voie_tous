@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         On Voie Tous
 // @namespace    http://tampermonkey.net/
-// @version      0.13
+// @version      0.14
 // @description  Predicts platforms on SNCF, RFI and ADIF departure boards. Adds deeplinks to SNCB
 // @author       bovine3dom
 // @match        https://www.garesetconnexions.sncf/*
@@ -11,13 +11,12 @@
 // @match        https://www.b-europe.com/EN/Real-time*
 // @match        https://dpartu.re/*
 // @run-at       document-start
-// @updateURL    https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js
+// @updateURL    https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js.meta.js
 // @downloadURL  https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js
 // @supportURL   https://github.com/bovine3dom/on_voie_tous/issues/
 // @grant        GM_xmlhttpRequest
+// @grant        GM.xmlHttpRequest
 // @connect      compute.olie.science
-// @sandbox      raw
-// @inject-into  page
 // ==/UserScript==
 
 (function() {
@@ -30,6 +29,17 @@
 
     if (window.location.hostname === 'dpartu.re') {
         window.__onVoieTousRunning = true;
+        const markDocument = () => {
+            if (!document.documentElement) return false;
+            document.documentElement.setAttribute('data-on-voie-tous-running', 'true');
+            return true;
+        };
+        if (!markDocument()) {
+            const observer = new MutationObserver(() => {
+                if (markDocument()) observer.disconnect();
+            });
+            observer.observe(document, {childList: true, subtree: true});
+        }
         window.dispatchEvent(new Event('on-voie-tous-running'));
         return;
     }
@@ -177,21 +187,31 @@
 
     function privilegedRequest(path, payload) {
         return new Promise(resolve => {
-            if (typeof GM_xmlhttpRequest === 'function') {
-                GM_xmlhttpRequest({
-                    url: 'https://compute.olie.science/on_voie_tous' + path,
-                    method: payload ? 'POST' : 'GET',
-                    headers: {'Content-Type': 'application/json'},
-                    data: payload ? JSON.stringify(payload) : undefined,
-                    anonymous: true,
-                    timeout: PREDICT_TIMEOUT_MS,
-                    onload: response => {
-                        try { resolve(response.status === 200 ? JSON.parse(response.responseText) : null); }
-                        catch { resolve(null); }
-                    },
-                    onerror: () => resolve(null),
-                    ontimeout: () => resolve(null),
-                });
+            const requestApi = typeof GM_xmlhttpRequest === 'function' ? GM_xmlhttpRequest :
+                typeof GM !== 'undefined' && typeof GM.xmlHttpRequest === 'function' ? GM.xmlHttpRequest.bind(GM) : null;
+            if (requestApi) {
+                const onload = response => {
+                    try {
+                        if (response.status !== 200) return resolve(null);
+                        const body = response.responseText ?? response.response;
+                        resolve(typeof body === 'string' ? JSON.parse(body) : body);
+                    } catch { resolve(null); }
+                };
+                try {
+                    const pending = requestApi({
+                        url: 'https://compute.olie.science/on_voie_tous' + path,
+                        method: payload ? 'POST' : 'GET',
+                        headers: {'Content-Type': 'application/json'},
+                        data: payload ? JSON.stringify(payload) : undefined,
+                        responseType: 'text',
+                        anonymous: true,
+                        timeout: PREDICT_TIMEOUT_MS,
+                        onload,
+                        onerror: () => resolve(null),
+                        ontimeout: () => resolve(null),
+                    });
+                    if (pending && typeof pending.then === 'function') pending.then(onload, () => resolve(null));
+                } catch { resolve(null); }
                 return;
             }
             const id = crypto.randomUUID();
