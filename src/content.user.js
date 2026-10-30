@@ -1,13 +1,15 @@
 // ==UserScript==
 // @name         On Voie Tous
 // @namespace    http://tampermonkey.net/
-// @version      0.12
-// @description  Predicts platforms on SNCF, RFI and ADIF departure boards
+// @version      0.13
+// @description  Predicts platforms on SNCF, RFI and ADIF departure boards. Adds deeplinks to SNCB
 // @author       bovine3dom
 // @match        https://www.garesetconnexions.sncf/*
 // @match        https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor*
 // @match        https://pantallas-estaciones.vercel.app/*
 // @match        https://www.adif.es/w/*
+// @match        https://www.b-europe.com/EN/Real-time*
+// @match        https://dpartu.re/*
 // @run-at       document-start
 // @updateURL    https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js
 // @downloadURL  https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js
@@ -26,6 +28,15 @@
     const MIN_PROBABILITY = 0.1;
     const MAX_PLATFORMS = 2;
 
+    if (window.location.hostname === 'dpartu.re') {
+        window.__onVoieTousRunning = true;
+        window.dispatchEvent(new Event('on-voie-tous-running'));
+        return;
+    }
+    if (window.location.hostname === 'www.b-europe.com') {
+        startBeurope();
+        return;
+    }
     if (window.location.hostname === 'www.adif.es') {
         startAdifWeb();
         return;
@@ -674,5 +685,58 @@
         }
         if (document.body) start();
         else document.addEventListener('DOMContentLoaded', start, {once: true});
+    }
+
+    function startBeurope() {
+        const requestedStation = new URLSearchParams(location.search).get('station')?.trim();
+        if (!requestedStation || window.__onVoieBeuropeActive ||
+            !/^\/EN\/Real-time\/?$/.test(location.pathname)) return;
+        window.__onVoieBeuropeActive = true;
+
+        const waitFor = async getter => {
+            for (let i = 0; i < 200; i++) {
+                const value = getter();
+                if (value) return value;
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            throw new Error('B-Europe page did not finish loading');
+        };
+
+        const normalize = value => String(value || '').normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '').toLowerCase()
+            .replace(/\s*\([a-z]{2}\)\s*$/i, '').replace(/[^a-z0-9]+/g, ' ').trim();
+
+        async function openBoard() {
+            try {
+                const controls = await waitFor(() => {
+                    const button = document.getElementById('station-board-search');
+                    const input = document.getElementById('station-board-station');
+                    const suggestions = input?.parentElement.querySelector('.autocomplete-suggestions');
+                    return button && input && suggestions ? {button, input} : null;
+                });
+                controls.input.value = requestedStation;
+                controls.input.dispatchEvent(new Event('input', {bubbles: true}));
+
+                const wanted = normalize(requestedStation);
+                const selection = await waitFor(() => {
+                    const suggestions = [...controls.input.parentElement
+                        .querySelectorAll('.autocomplete-suggestions .autocomplete-suggestion')];
+                    const names = suggestions.filter(item =>
+                        normalize(item.querySelector('.tt-station-name')?.textContent) === wanted);
+                    const aliases = suggestions.filter(item =>
+                        (item.querySelector('.tt-station-synonym')?.textContent || '').split(',')
+                            .some(alias => normalize(alias) === wanted));
+                    const matches = names.length ? names : aliases;
+                    return matches.length ? {item: matches[0], ambiguous: matches.length > 1} : null;
+                });
+                if (selection.ambiguous) throw new Error(`Station name is ambiguous: ${requestedStation}`);
+                selection.item.click();
+                controls.button.click();
+            } catch (error) {
+                console.warn('[On Voie Tous] Could not open B-Europe station board:', error);
+            }
+        }
+
+        openBoard();
     }
 })();

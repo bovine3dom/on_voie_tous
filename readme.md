@@ -1,6 +1,6 @@
 # On Voie Tous
 
-Adds platform predictions to SNCF Gares & Connexions train departures, such as for [Lyon Part Dieu here](https://www.garesetconnexions.sncf/fr/gares-services/lyon-part-dieu/horaires), and RFI departures such as for [Firenze SMN here](https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor?placeId=1325&arrivals=False). In theory, it would work for Adif too like for [Madrid Chamartin](https://pantallas-estaciones.vercel.app/~/?station=17000), but at the time of writing, Adif has blocked that page. But I guess you could type in your Spanish train details manually. It also works on other Adif pages like [Valencia Nord](https://www.adif.es/w/65000-val%C3%A8ncia-est.-nord). When they're not blocking your country.
+Adds platform predictions to SNCF Gares & Connexions train departures, such as for [Lyon Part Dieu here](https://www.garesetconnexions.sncf/fr/gares-services/lyon-part-dieu/horaires), and RFI departures such as for [Firenze SMN here](https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor?placeId=1325&arrivals=False). In theory, it would work for Adif too like for [Madrid Chamartin](https://pantallas-estaciones.vercel.app/~/?station=17000), but at the time of writing, Adif has blocked that page. But I guess you could type in your Spanish train details manually. It also works on other Adif pages like [Valencia Nord](https://www.adif.es/w/65000-val%C3%A8ncia-est.-nord). When they're not blocking your country. It also adds 'deeplink' support to SNCB's departure boards, you can add a `station` query parameter to open a board directly. These deeplinks are mostly useful in combination with https://dpartu.re which can then take you to the pages directly.
 
 SNCF Gares & Connexions doesn't show train platforms until very late, approx 20 minutes before departure. However, they know the platform number well in advance and _USED TO_ even transmit some of this data to the browser. This Web Extension simply ~~rewrites~~ rewrote the flags on these hidden platform numbers, ensuring that the Gares & Connexions website ~~shows~~ showed them.
 
@@ -16,9 +16,6 @@ However, SNCF Gares & Connexions got wind of this and stopped transmitting the p
 Add to Firefox on desktop or Android from the [Firefox Add-ons Store](https://addons.mozilla.org/en-US/firefox/addon/on-voie-tous/). Users have reported that it also works on the Orion browser for iPhone.
 
 For other browsers that support userscripts, if you have e.g. Tampermonkey installed, you can install the script directly by clicking this link: [content.user.js](https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js)
-
-The userscript also supports [RFI](rfi/readme.md) and [ADIF](adif/readme.md) departure boards.
-
 ## Disclaimer
 
 Sometimes the platform might change. You will notice when this happens because the train will not arrive at your platform.
