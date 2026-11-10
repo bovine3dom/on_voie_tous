@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         On Voie Tous
 // @namespace    http://tampermonkey.net/
-// @version      0.14
+// @version      0.15
 // @description  Predicts platforms on SNCF, RFI and ADIF departure boards. Adds deeplinks to SNCB
 // @author       bovine3dom
 // @match        https://www.garesetconnexions.sncf/*
@@ -14,6 +14,7 @@
 // @updateURL    https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js.meta.js
 // @downloadURL  https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js
 // @supportURL   https://github.com/bovine3dom/on_voie_tous/issues/
+// @grant        unsafeWindow
 // @grant        GM_xmlhttpRequest
 // @grant        GM.xmlHttpRequest
 // @connect      compute.olie.science
@@ -26,6 +27,8 @@
     const PREDICT_TIMEOUT_MS = 2000;
     const MIN_PROBABILITY = 0.1;
     const MAX_PLATFORMS = 2;
+    const pageWindow = typeof unsafeWindow === 'undefined' ? window : unsafeWindow;
+    const exportToPage = fn => typeof exportFunction === 'function' ? exportFunction(fn, pageWindow) : fn;
 
     if (window.location.hostname === 'dpartu.re') {
         window.__onVoieTousRunning = true;
@@ -144,7 +147,7 @@
         document.head.appendChild(style);
     }
 
-    const originalFetch = window.fetch;
+    const originalFetch = pageWindow.fetch;
 
     function makeTracksActive(obj) {
         if (!obj) return;
@@ -330,9 +333,9 @@
         }
     }
 
-    window.fetch = async function(...args) {
+    async function interceptFetch(...args) {
         const [resource] = args;
-        const response = await originalFetch.apply(this, args);
+        const response = await originalFetch.call(this, ...args);
 
         if (typeof resource === 'string' && resource.includes('/schedule-table/')) {
             const clonedResponse = response.clone();
@@ -342,17 +345,24 @@
 
                 makeTracksActive(data);
 
-                return new Response(JSON.stringify(data), {
-                    status: response.status,
-                    statusText: response.statusText,
-                    headers: response.headers
-                });
+                const options = new pageWindow.Object();
+                options.status = response.status;
+                options.statusText = response.statusText;
+                options.headers = response.headers;
+                return new pageWindow.Response(JSON.stringify(data), options);
             } catch (err) {
                 return response;
             }
         }
         return response;
-    };
+    }
+
+    // Firefox's userscript sandbox needs a page-native promise and response.
+    pageWindow.fetch = typeof exportFunction === 'function' ? exportToPage(function(...args) {
+        return new pageWindow.Promise(exportToPage((resolve, reject) => {
+            interceptFetch.apply(this, args).then(resolve, reject);
+        }));
+    }) : interceptFetch;
 
     function appendAdifEstimate(platform, labels) {
         const estimate = document.createElement('span');
@@ -451,9 +461,10 @@
             render();
         }
 
-        const open = XMLHttpRequest.prototype.open;
-        const send = XMLHttpRequest.prototype.send;
-        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+        const xhrPrototype = pageWindow.XMLHttpRequest.prototype;
+        const open = xhrPrototype.open;
+        const send = xhrPrototype.send;
+        xhrPrototype.open = exportToPage(function(method, url, ...rest) {
             const result = open.call(this, method, url, ...rest);
             requests.delete(this);
             try {
@@ -470,8 +481,8 @@
                 }
             } catch { /* Leave unrelated requests unchanged. */ }
             return result;
-        };
-        XMLHttpRequest.prototype.send = function(...args) {
+        });
+        xhrPrototype.send = exportToPage(function(...args) {
             const context = requests.get(this);
             if (context) {
                 if (context.page === 0 || context.traffic !== traffic) reset();
@@ -481,8 +492,8 @@
                 const current = {...context, generation};
                 this.addEventListener('loadend', () => { received(this, current).catch(() => {}); }, {once: true});
             }
-            return send.apply(this, args);
-        };
+            return send.call(this, ...args);
+        });
         document.addEventListener('change', event => {
             if (event.target.name === 'trafficType') reset();
         });

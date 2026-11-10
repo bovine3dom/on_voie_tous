@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "On Voie Tous",
-  "version": "0.14",
+  "version": "0.15",
   "permissions": [],
   "background": {
     "scripts": ["background.js"],

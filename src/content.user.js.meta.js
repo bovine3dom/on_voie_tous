@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         On Voie Tous
 // @namespace    http://tampermonkey.net/
-// @version      0.14
+// @version      0.15
 // @description  Predicts platforms on SNCF, RFI and ADIF departure boards. Adds deeplinks to SNCB
 // @author       bovine3dom
 // @match        https://www.garesetconnexions.sncf/*
@@ -14,6 +14,7 @@
 // @updateURL    https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js.meta.js
 // @downloadURL  https://raw.githubusercontent.com/bovine3dom/on_voie_tous/master/src/content.user.js
 // @supportURL   https://github.com/bovine3dom/on_voie_tous/issues/
+// @grant        unsafeWindow
 // @grant        GM_xmlhttpRequest
 // @grant        GM.xmlHttpRequest
 // @connect      compute.olie.science
